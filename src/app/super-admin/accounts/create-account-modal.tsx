@@ -176,7 +176,7 @@ export function CreateAccountModal({
           <div className="rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-700">
             The password defaults to{" "}
             <span className="font-mono font-semibold">{DEFAULT_PASSWORD}</span>.
-            The user must change it on first login.
+            The user can change it anytime from their profile.
           </div>
 
           {error && (

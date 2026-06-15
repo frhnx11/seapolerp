@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const WHEELS = [10, 12, 14] as const;
+export const WHEELS = [10, 12, 14, 16] as const;
 export const TRUCK_STATUSES = ["ACTIVE", "BLOCKED"] as const;
 export type TruckStatus = (typeof TRUCK_STATUSES)[number];
 

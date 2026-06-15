@@ -31,7 +31,7 @@ model HealthCheck {
 model Truck {
   id                String   @id @default(cuid())
   vehicleNo         String   @unique @map("vehicle_no")
-  wheels            Int // 10 | 12 | 14
+  wheels            Int // 10 | 12 | 14 | 16
   ownerId           String   @map("owner_id")
   rcValidity        String   @map("rc_validity")
   insuranceValidity String   @map("insurance_validity")

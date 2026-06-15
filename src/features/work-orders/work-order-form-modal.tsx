@@ -5,6 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { formatQty } from "@/core/format";
+import { getTodayIso } from "@/features/trucks/truck";
 
 import { createWorkOrder, deleteWorkOrder, updateWorkOrder } from "./actions";
 import {
@@ -56,7 +57,8 @@ export function WorkOrderFormModal({
   onDeleted?: () => void;
 }) {
   const isEdit = Boolean(workOrder);
-  const [date, setDate] = useState(workOrder?.date ?? "");
+  // New work orders default to today's date (editable); edits keep their date.
+  const [date, setDate] = useState(() => workOrder?.date ?? getTodayIso());
   const [vesselId, setVesselId] = useState(workOrder?.vesselId ?? "");
   const [cargoTypeId, setCargoTypeId] = useState(workOrder?.cargoTypeId ?? "");
   const [supplierId, setSupplierId] = useState(workOrder?.supplierId ?? "");

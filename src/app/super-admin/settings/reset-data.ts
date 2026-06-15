@@ -69,6 +69,7 @@ const STATE_CODES = [
 ];
 const SERIES_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // skip I/O to avoid confusion
 const TRUCK_COUNT = 100;
+const EXPIRED_COUNT = 10; // the rest stay active (none blocked)
 
 const pick = <T>(arr: readonly T[]): T =>
   arr[Math.floor(Math.random() * arr.length)];
@@ -116,9 +117,10 @@ function generateTrucks(ownerIds: string[], todayIso: string) {
     if (seen.has(vehicleNo)) continue;
     seen.add(vehicleNo);
 
-    // ~30% of trucks have at least one expired validity (1, 2, or all 3).
+    // Keep most trucks active — only the first EXPIRED_COUNT get a past validity
+    // date (1, 2, or all 3), so the sample shows ~10 Expired and the rest Active.
     const expired = new Set<"rc" | "ins" | "fc">();
-    if (Math.random() < 0.3) {
+    if (trucks.length < EXPIRED_COUNT) {
       const fields: ("rc" | "ins" | "fc")[] = ["rc", "ins", "fc"];
       const shuffled = [...fields].sort(() => Math.random() - 0.5);
       for (const f of shuffled.slice(0, randInt(1, 3))) expired.add(f);
