@@ -1,0 +1,163 @@
+❯ are you sure you can handle the whole thing at once? you can break it into steps if you want. but make sure   
+  everything is done carefully and to industry standard                                                         
+
+● Honest answer: it's a big feature, and doing it in one shot would be careless. I'll build it in four ordered 
+  steps, verifying each (typecheck/lint + a curl against your running :3000) before moving on — and I'll report
+  after each so you can eyeball it. Let me record the execution order in the plan.
+
+● Updated plan
+  ⎿  /plan to preview
+
+  4 tasks (3 done, 1 in progress, 0 open)
+  ✔ Build hover-expanding AppSidebar
+  ✔ Build AppHeader + LogoutButton, remove old sign-out
+  ✔ Wire shell into protected layout + blank page
+  ◼ Verify shell (kill strays, dev, checks)
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Ready to code?
+
+ Here is Claude's plan:
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ Accounts management + forced first-login password change
+
+ Context
+
+ Build the super-admin Accounts page: a table (Name, Role, Info) of all accounts with an Info
+ modal per row and a "Create New Account" modal, styled exactly like the EduFront CRM page + modals
+ (SuperAdminLayout/crm/page.tsx/StudentProfileEditModal.tsx). New accounts get an auto-generated
+ username + the default password 123456, and the 4 non-super roles are forced to change their
+ password on first login (and again after an admin reset) — mirroring EduFront's mustChangePassword
+ → /change-password flow. This is where SUPER_ADMIN provisions the Admin / Port WB / Party WB /
+ Accountant accounts.
+
+ Execution order (incremental — verify each step before the next)
+
+ 1. Auth & data foundation (no UI): rename roles + defaultRole; minPasswordLength: 6; add the
+ additionalFields; regenerate Better Auth schema → db:migrate → db:generate. Verify: typecheck
+ green, migration applied, super admin still logs in, new columns exist.
+ 2. Role-aware shell: make AppSidebar/AppHeader configurable; (protected)/layout.tsx derives the
+ role → portal label + nav (super-admin = Dashboard/Accounts/Settings/Profile; others = Dashboard/Profile).
+ Verify: super-admin shell unchanged; typecheck/lint.
+ 3. Accounts page + create/reset: /accounts (guarded), CRM-styled table, Create modal (auto-username
+ preview), Info modal (+ reset password w/ confirm), createAccount/resetPassword actions, username util.
+ Verify: create a real account (DB row + auto username), reset works, table renders.
+ 4. Forced first-login password change: mustChangePassword gate in the layout + /change-password
+ page/form/action. Verify (end-to-end): log in as a created account (123456) → forced to
+ /change-password → change → lands on its (blank) role portal; reset → forced again; super admin unaffected.
+
+ After each step: typecheck/lint/format + a targeted curl against the running :3000, then report.
+
+ Roles (rename to the user's terms)
+
+ Update src/core/auth/permissions.ts roles + src/core/auth/auth.ts defaultRole:
+ SUPER_ADMIN, ADMIN, PORT_WB, PARTY_WB, ACCOUNTANT (was RECEIVER_WB→PARTY_WB, ACCOUNTS→ACCOUNTANT).
+ Labels: Super Admin / Admin / Port Weighbridge / Party Weighbridge / Accountant.
+ Username abbreviations: adm, prt, pty, act (super admin not created here). No existing rows use the old
+ names, so renaming is safe.
+
+ Data model (Better Auth additional fields on user)
+
+ In auth.ts, add user.additionalFields (so the CLI generates the columns; we read/write via Prisma):
+ - mustChangePassword boolean (default false), phone string?, dateOfBirth string? ("YYYY-MM-DD"),
+ contactEmail string? (the person's real email — distinct from the @seapolerp.com login username),
+ rollNo int? (per-type sequence). All input:false (server-controlled).
+ - Also lower minPasswordLength: 10 → 6 (the default password 123456 is 6 chars; super admin's
+ 10-char password stays valid).
+ Then pnpm dlx @better-auth/cli generate → pnpm db:migrate → pnpm db:generate. Existing super-admin
+ row gets mustChangePassword=false via the column default (so it is never force-redirected).
+
+ Username generation — src/app/(protected)/accounts/username.ts (pure, shared client+server)
+
+ buildUsername(name, role, rollNo) → `${sanitize(name)}_${ABBR[role]}-${pad3(rollNo)}@seapolerp.com`
+ (e.g. johndoe_adm-001@seapolerp.com). sanitize = lowercase, strip non-[a-z0-9] (fallback "user").
+ nextRollFor(accounts, role) = max existing rollNo for that role + 1. Also exports ROLE_LABELS,
+ CREATABLE_ROLES, ROLE_ABBR, DEFAULT_PASSWORD = "123456".
+
+ Accounts page (mirror CRM styling)
+
+ - src/app/(protected)/accounts/page.tsx (server): guard role===SUPER_ADMIN (else redirect /);
+ prisma.user.findMany (id,name,email,role,phone,dateOfBirth,contactEmail,rollNo) → <AccountsClient>.
+ - accounts-client.tsx (client): max-w-[1600px] mx-auto space-y-6; header h1 text-3xl font-bold with
+ a <Users className="text-[#0483ca]" size={32}/> icon + subtitle, and a top-right Create New Account
+ button (bg-[#0483ca] text-white px-4 py-2.5 rounded-xl + UserPlus). Search bar (CRM style, client
+ filter by name/role/username). Table card bg-white rounded-2xl border border-gray-100 overflow-hidden
+ → thead bg-gray-50 th px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider
+ (Name, Role, Info); tbody divide-y divide-gray-100; Name text-sm font-medium text-gray-900; Role
+ a colored pill (inline-flex px-3 py-1 rounded-full text-xs font-medium); Info cell = blue button
+ (bg-[#0483ca] hover:bg-[#0372b0] text-white px-3 py-1.5 rounded-lg + <Info size={18}/>).
+ - info-modal.tsx (client): modal pattern (overlay bg-black/50, card rounded-2xl max-w-2xl,
+ border-b header w/ X). Read-only rows: Name, Username, Phone Number, Email, Date of Birth,
+ Type of Account (label/value rows like the CRM detail modal). Reset Password button with an
+ inline confirm ("Reset to 123456?") → resetPassword action; hidden for SUPER_ADMIN rows. Footer Close.
+ - create-account-modal.tsx (client): modal pattern; fields Name, Phone, Email, Date of Birth,
+ Type of Account (select of CREATABLE_ROLES) + a read-only auto Username preview (live via
+ buildUsername(name, role, nextRollFor(accounts, role))). No password field. Submit → createAccount
+ action; on success show the created username + "password: 123456", then refresh. Name + Type required;
+ email validated if present.
+ - Update app-sidebar.tsx: Accounts tab href: "#" → "/accounts" (active pill works via pathname).
+
+ Server actions — src/app/(protected)/accounts/actions.ts ("use server")
+
+ Both re-check session.user.role === SUPER_ADMIN (defense in depth) and pass headers: await headers().
+ - createAccount(input): zod-validate; compute rollNo = max(rollNo where role)+1; username = buildUsername;
+ auth.api.createUser({ body:{ email:username, password:DEFAULT_PASSWORD, name, role } });
+ then prisma.user.update set phone/dateOfBirth/contactEmail/rollNo/mustChangePassword:true/
+ emailVerified:true. Unique-email constraint backstops roll races. revalidatePath('/accounts').
+ - resetPassword(userId): auth.api.setUserPassword({ body:{ userId, newPassword:DEFAULT_PASSWORD } })
+   - prisma.user.update mustChangePassword:true. revalidatePath('/accounts').
+
+ Forced password change flow
+
+ - src/app/(protected)/layout.tsx: after getSession, prisma.user.findUnique select mustChangePassword;
+ if true → redirect("/change-password").
+ - src/app/change-password/page.tsx (top-level, standalone — NOT under the (protected) shell, so no loop):
+ server getSession (→ /login if none); renders <ChangePasswordForm>. Full blue bg + white card +
+ logo + "Change Password" / "You must change your password before continuing" (EduFront layout) with
+ current / new / confirm fields (+ Eye toggle).
+ - change-password/actions.ts ("use server") changePassword({currentPassword,newPassword}):
+ auth.api.changePassword({ body:{ currentPassword, newPassword, revokeOtherSessions:false }, headers })
+ → on success prisma.user.update mustChangePassword:false. Client validates match + min 6 + different,
+ then router.replace("/").
+ - Login already redirects to /; the layout gate then routes must-change users to /change-password.
+ Middleware already lets authenticated users reach /change-password (cookie present).
+
+ Files (summary)
+
+ Modify: core/auth/permissions.ts, core/auth/auth.ts, (protected)/layout.tsx,
+ (protected)/_components/app-sidebar.tsx. Create: (protected)/accounts/{page,accounts-client,
+ Files (summary)
+
+ Modify: core/auth/permissions.ts, core/auth/auth.ts, (protected)/layout.tsx,
+ (protected)/_components/app-sidebar.tsx. Create: (protected)/accounts/{page,accounts-client, 
+     │                                                                                                         │
+     │ - pnpm typecheck / lint / format green. (Run checks + curl against the user's running :3000 — never     │
+     │ start/stop a server.)                                                                                   │
+     │ - Browser (user): super admin → Accounts shows the table; Create New Account → auto username preview →  │
+     │ create → row appears. Log out, log in as the new ..._adm-001@seapolerp.com / 123456 → forced to         │
+     │ /change-password → set new password → lands on /; logging in again uses the new password. Info modal    │
+     │ → Reset Password (confirm) → that account is back to 123456 + forced change on next login.              │
+     │                                                                                                         │
+     │ Role-based portals (same shell, content differs per type; blank for now)                                │
+     │                                                                                                         │
+     │ Every account type must be able to log in and land on its own portal that reuses the same shell         │
+     │ (sidebar + header design); only the content/nav differ per role, and non-super content is blank for     │
+     │ now.                                                                                                    │
+     │ - Make the shell role-aware: AppSidebar/AppHeader accept props (navItems, portalLabel, user).           │
+     │ (protected)/layout.tsx derives the role from the session and renders the shell with that role's config: │
+     │ header subtitle = "<Role> Portal" (Super Admin / Admin / Port Weighbridge / Party Weighbridge /         │
+     │ Accountant Portal), and the role's nav list.                                                            │
+     │ - All roles land on / after login + password change (no route restructure needed yet); the shell adapts │
+     │ to the role and the / content is blank for non-super roles (super admin keeps Dashboard home).          │
+     │ - Super admin nav: Dashboard /, Accounts /accounts, Settings, Profile. /accounts (page + actions)       │
+     │ guarded to SUPER_ADMIN (non-super → redirect /).                                                        │
+     │ - Non-super nav (for now): Dashboard (/) + Profile (#) only — both blank pages.                         │
+     │ - Created accounts are real DB rows (Better Auth user + profile fields), so each can log in immediately │
+     │ (with 123456 → forced change on first login).                                                           │
+     ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+  4 tasks (3 done, 1 in progress, 0 open)
+  ✔ Build hover-expanding AppSidebar
+  ✔ Build AppHeader + LogoutButton, remove old sign-out
+  ✔ Wire shell into protected layout + blank page
+  ◼ Verify shell (kill strays, dev, checks)

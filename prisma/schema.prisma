@@ -1,0 +1,361 @@
+// SeaPole TMS — Prisma schema.
+// Docs: https://pris.ly/d/prisma-schema
+//
+// Prisma 7: the runtime client is "Rust-free" and uses the query compiler with a
+// JS driver adapter (see src/lib/prisma.ts). The connection URL for CLI commands
+// (migrate/generate) is configured in prisma.config.ts, not in the datasource block.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Liveness-probe table used by `GET /api/health` to verify end-to-end database
+/// connectivity. This is a placeholder and will be removed once the real TMS
+/// domain model is defined.
+
+model HealthCheck {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("health_checks")
+}
+
+/// Truck master — the fleet that delivery work orders draw from.
+/// Validity dates are stored as "YYYY-MM-DD" strings (timezone-safe and
+/// lexically chronological, so expiry checks are simple comparisons).
+model Truck {
+  id                String   @id @default(cuid())
+  vehicleNo         String   @unique @map("vehicle_no")
+  wheels            Int // 10 | 12 | 14
+  ownerId           String   @map("owner_id")
+  rcValidity        String   @map("rc_validity")
+  insuranceValidity String   @map("insurance_validity")
+  fcValidity        String   @map("fc_validity")
+  status            String   @default("ACTIVE") // ACTIVE | BLOCKED
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  owner       TruckOwner       @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  allotments  WorkOrderTruck[]
+  truckOrders TruckOrder[]
+
+  @@index([ownerId])
+  @@map("trucks")
+}
+
+/// Truck-owner companies — invoices pay one owner for a set of settled trips,
+/// so the name must be consistent across the fleet (no free-text owners).
+model TruckOwner {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  trucks    Truck[]
+
+  @@map("truck_owners")
+}
+
+/// Simple name-only master lists managed from Admin → Master Data.
+model CargoType {
+  id         String      @id @default(cuid())
+  name       String      @unique
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+  workOrders WorkOrder[]
+
+  @@map("cargo_types")
+}
+
+model Party {
+  id         String      @id @default(cuid())
+  name       String      @unique
+  /// Transport rate in ₹ per MT — multiplied with a trip's lowest net weight on
+  /// invoices. Snapshotted onto each invoice at creation; null until the admin
+  /// sets it (invoice creation is blocked while unset).
+  rate       Decimal?    @db.Decimal(12, 2)
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+  workOrders WorkOrder[]
+
+  @@map("parties")
+}
+
+model Supplier {
+  id         String      @id @default(cuid())
+  name       String      @unique
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+  workOrders WorkOrder[]
+
+  @@map("suppliers")
+}
+
+/// Loading sites at the port (W/H, W/F, C.BELT, …) — where trucks load.
+model LoadingSite {
+  id        String        @id @default(cuid())
+  name      String        @unique
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+  truckOrders TruckOrder[]
+
+  @@map("loading_sites")
+}
+
+/// Vessel (ship arrival) master — carries the total BL quantity of goods in the
+/// ship. Work orders allocate DO quantities against it; the sum of a vessel's DO
+/// quantities can never exceed its BL. Each new arrival/consignment is a new
+/// vessel row. `seq` renders as "VSL-#001".
+model Vessel {
+  id         String      @id @default(cuid())
+  seq        Int         @unique @default(autoincrement())
+  name       String      @unique
+  blQuantity Decimal     @map("bl_quantity") @db.Decimal(12, 3)
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+  workOrders WorkOrder[]
+
+  @@map("vessels")
+}
+
+/// Work Order — an order to deliver part (or all) of a vessel's goods to a Party
+/// using many trucks. `seq` is a DB sequence rendered as "WO-#001". Quantities
+/// are in metric tons; `doQuantity` is this order's allocation of the vessel's
+/// BL (mutable over time, ≥ delivered, and Σ per vessel ≤ BL); `delivered` is
+/// updated later by the delivery module; balance (DO - delivered) is derived.
+model WorkOrder {
+  id         String   @id @default(cuid())
+  seq        Int      @unique @default(autoincrement())
+  date        String    @map("wo_date") // "YYYY-MM-DD", entered manually
+  vesselId    String    @map("vessel_id")
+  cargoTypeId String    @map("cargo_type_id")
+  supplierId  String    @map("supplier_id")
+  partyId     String    @map("party_id")
+  doQuantity  Decimal   @map("do_quantity") @db.Decimal(12, 3)
+  delivered   Decimal   @default(0) @db.Decimal(12, 3)
+  /// Name snapshot of the admin who created the order (null on legacy rows).
+  createdByName String? @map("created_by_name")
+
+  // Customs/regulatory references (consignment-level, printed on every VT sheet).
+  bePermissionNo String? @map("be_permission_no")
+  eaIaNo         String? @map("ea_ia_no")
+  eaIaDate       String? @map("ea_ia_date") // "YYYY-MM-DD"
+  sbBeNo         String? @map("sb_be_no")
+  sbBeDate       String? @map("sb_be_date") // "YYYY-MM-DD"
+  vessel      Vessel    @relation(fields: [vesselId], references: [id], onDelete: Restrict)
+  cargoType   CargoType @relation(fields: [cargoTypeId], references: [id], onDelete: Restrict)
+  supplier    Supplier  @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  party       Party     @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  allottedTrucks WorkOrderTruck[]
+  truckOrders    TruckOrder[]
+  invoices       Invoice[]
+
+  @@index([vesselId])
+  @@index([supplierId])
+  @@index([partyId])
+  @@index([cargoTypeId])
+  @@map("work_orders")
+}
+
+/// Truck Order — one truck's gate-to-gate trip delivering part of a work order.
+/// Advances through a fixed stage sequence; each stage snapshots who did it and
+/// when. `seq` renders as "TO-#001". Weights are MT; once gross/net is recorded
+/// (order COMPLETED) tare and gross are locked because the net has been added to
+/// the work order's delivered quantity.
+model TruckOrder {
+  id          String    @id @default(cuid())
+  seq         Int       @unique @default(autoincrement())
+  workOrderId String    @map("work_order_id")
+  truckId     String    @map("truck_id")
+  status      String    @default("TARE_RECORDED") // TARE_RECORDED | LOADING_SLIP_ISSUED | COMPLETED
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Restrict)
+  truck       Truck     @relation(fields: [truckId], references: [id], onDelete: Restrict)
+
+  // Stage 1 — weighbridge in (creates the trip)
+  tareWeight        Decimal  @map("tare_weight") @db.Decimal(12, 3)
+  tareByName        String   @map("tare_by_name")
+  tareAt            DateTime @map("tare_at")
+
+  // Stage 2 — cargo loading slip
+  loadingSiteId     String?      @map("loading_site_id")
+  loadingSite       LoadingSite? @relation(fields: [loadingSiteId], references: [id], onDelete: Restrict)
+  loadingSlipByName String?      @map("loading_slip_by_name")
+  loadingSlipAt     DateTime?    @map("loading_slip_at")
+
+  // Stage 3 — weighbridge out (net updates WorkOrder.delivered)
+  vtNumber        String?   @unique @map("vt_number")
+  grossWeight     Decimal?  @map("gross_weight") @db.Decimal(12, 3)
+  netWeight       Decimal?  @map("net_weight") @db.Decimal(12, 3)
+  completedByName String?   @map("completed_by_name")
+  completedAt     DateTime? @map("completed_at")
+
+  // Party weighbridge — net weight received at the destination (after COMPLETED)
+  netWeightReceived Decimal?  @map("net_weight_received") @db.Decimal(12, 3)
+  netReceivedByName String?   @map("net_received_by_name")
+  netReceivedAt     DateTime? @map("net_received_at")
+
+  // Invoicing — a trip lives on at most one invoice; deleting the invoice
+  // frees the trip. While set, the received weight is locked (no drift).
+  invoiceId String?  @map("invoice_id")
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  notifications Notification[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([workOrderId, seq])
+  @@index([truckId])
+  @@index([loadingSiteId])
+  @@index([invoiceId])
+  @@map("truck_orders")
+}
+
+/// Transport invoice — pays one truck-owner company for a set of settled trips
+/// (COMPLETED + net received) of one work order. Amounts are a snapshot: the
+/// party's ₹/MT rate is frozen at creation (edits recompute with this stored
+/// rate, never the party's current one). `seq` renders as "INV-#001".
+model Invoice {
+  id          String    @id @default(cuid())
+  seq         Int       @unique @default(autoincrement())
+  workOrderId String    @map("work_order_id")
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Restrict)
+
+  date       String  @map("invoice_date") // "YYYY-MM-DD", entered manually
+  truckOwner String  @map("truck_owner") // owner company as on the trucks master
+  rate       Decimal @db.Decimal(12, 2) // ₹/MT, frozen at creation
+
+  totalQty    Decimal @map("total_qty") @db.Decimal(12, 3) // Σ lowest net weights
+  amount      Decimal @db.Decimal(14, 2) // totalQty × rate
+  discountPct Decimal @default(0) @map("discount_pct") @db.Decimal(5, 2)
+  finalAmount Decimal @map("final_amount") @db.Decimal(14, 2) // amount − discount
+
+  createdByName String   @map("created_by_name")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  truckOrders TruckOrder[]
+
+  @@index([workOrderId])
+  @@map("invoices")
+}
+
+/// A net-weight alert delivered to one admin: one row per admin per flagged trip,
+/// created when a trip's net received differs from net sent by > 0.3 MT. Reading
+/// it deletes the row, so the bell only ever holds unacknowledged alerts.
+model Notification {
+  id           String     @id @default(cuid())
+  userId       String     @map("user_id")
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  truckOrderId String     @map("truck_order_id")
+  truckOrder   TruckOrder @relation(fields: [truckOrderId], references: [id], onDelete: Cascade)
+  workOrderSeq Int        @map("work_order_seq") // snapshot for the "WO-#…" label
+  vehicleNo    String     @map("vehicle_no")
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  @@unique([truckOrderId, userId])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+/// Trucks allotted to a work order — only these trucks may deliver its goods.
+/// Explicit join table so future per-truck delivery data can hang off it. A truck
+/// can be allotted to many work orders at once.
+model WorkOrderTruck {
+  id          String    @id @default(cuid())
+  workOrderId String    @map("work_order_id")
+  truckId     String    @map("truck_id")
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  truck       Truck     @relation(fields: [truckId], references: [id], onDelete: Restrict)
+  /// Work-order-specific block: when true, this truck can't start NEW trips
+  /// under this work order (existing trips are unaffected). Separate from the
+  /// universal Truck.status = BLOCKED.
+  blocked     Boolean   @default(false)
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@unique([workOrderId, truckId])
+  @@index([truckId])
+  @@map("work_order_trucks")
+}
+
+model User {
+  id            String    @id
+  name          String
+  email         String
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  role          String?
+  banned        Boolean?  @default(false)
+  banReason     String?
+  banExpires    DateTime?
+  sessions      Session[]
+  accounts      Account[]
+
+  phone        String?
+  dateOfBirth  String?
+  contactEmail String?
+  rollNo       Int?
+
+  notifications Notification[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id             String   @id
+  expiresAt      DateTime
+  token          String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  ipAddress      String?
+  userAgent      String?
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  impersonatedBy String?
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}

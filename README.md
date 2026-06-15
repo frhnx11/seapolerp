@@ -1,0 +1,143 @@
+# SeaPole TMS
+
+Transportation Management System for a shipping logistics company. Built for hundreds of
+concurrent users and a high volume of database transactions, so the codebase favors
+correctness, type-safety, and production-readiness throughout.
+
+> The domain model and application flow are being defined incrementally. This repository
+> currently contains the verified **foundation**: app shell, database layer, validated
+> configuration, UI primitives, and the developer quality gate.
+
+## Tech stack
+
+| Layer           | Choice                                           | Version        |
+| --------------- | ------------------------------------------------ | -------------- |
+| Framework       | Next.js (App Router, Turbopack)                  | 16.2.x         |
+| Language        | TypeScript (strict)                              | 5.9.x          |
+| UI              | React · Tailwind CSS · shadcn/ui (Radix)         | 19.2 · 4.x · — |
+| ORM             | Prisma (Rust-free, query compiler)               | 7.8.x          |
+| Driver          | `@prisma/adapter-pg` + `pg`                      | 7.8 · 8.x      |
+| Database        | PostgreSQL                                       | 18             |
+| Config          | `@t3-oss/env-nextjs` + Zod                       | 0.13 · 4.x     |
+| Tooling         | ESLint · Prettier · Husky · lint-staged · Vitest | —              |
+| Package manager | pnpm                                             | 11.x           |
+
+## Prerequisites
+
+- **Node.js** 20.9+ (developed on 24.x)
+- **pnpm** 11+ — `npm install -g pnpm`
+- **PostgreSQL** 18 running locally on `5432`
+
+## Getting started
+
+### 1. Install dependencies
+
+```bash
+pnpm install
+```
+
+This also runs `prisma generate` (via the `postinstall` script), producing the typed
+client in `src/generated/prisma` (git-ignored).
+
+### 2. Create the database and a least-privilege role
+
+The app connects as a dedicated role — never the `postgres` superuser. Run once, as the
+superuser (choose a strong password):
+
+```sql
+CREATE ROLE seapolerp_app WITH LOGIN CREATEDB PASSWORD 'choose-a-strong-password';
+CREATE DATABASE seapolerp OWNER seapolerp_app;
+```
+
+`CREATEDB` is granted so Prisma can manage its shadow database during local migrations.
+On Windows, `psql` lives at `C:\Program Files\PostgreSQL\18\bin\psql.exe`.
+
+### 3. Configure environment
+
+```bash
+cp .env.example .env
+```
+
+Set `DATABASE_URL` to your connection string:
+
+```
+DATABASE_URL="postgresql://seapolerp_app:<password>@localhost:5432/seapolerp?schema=public"
+```
+
+`DATABASE_URL` is validated at startup by `src/env.ts`; the app fails fast if it is
+missing or malformed.
+
+### 4. Apply migrations
+
+```bash
+pnpm db:migrate
+```
+
+### 5. Run the app
+
+```bash
+pnpm dev
+```
+
+Visit http://localhost:3000. Verify the data path end-to-end:
+
+```bash
+curl http://localhost:3000/api/health
+# { "status": "ok", "database": "up", ... }
+```
+
+## Scripts
+
+| Script                              | Purpose                              |
+| ----------------------------------- | ------------------------------------ |
+| `pnpm dev`                          | Start the dev server (Turbopack)     |
+| `pnpm build`                        | `prisma generate` + production build |
+| `pnpm start`                        | Run the production build             |
+| `pnpm lint`                         | ESLint                               |
+| `pnpm format` / `pnpm format:check` | Prettier write / check               |
+| `pnpm typecheck`                    | `tsc --noEmit`                       |
+| `pnpm test` / `pnpm test:watch`     | Vitest                               |
+| `pnpm db:migrate`                   | Create & apply a dev migration       |
+| `pnpm db:deploy`                    | Apply migrations (CI/production)     |
+| `pnpm db:generate`                  | Regenerate the Prisma client         |
+| `pnpm db:studio`                    | Open Prisma Studio                   |
+
+## Project structure
+
+```
+prisma/
+  schema.prisma            # data model (placeholder HealthCheck for now)
+  migrations/              # SQL migration history
+prisma.config.ts           # Prisma CLI config (migration DB URL via dotenv)
+src/
+  app/
+    api/health/route.ts    # DB-backed health probe
+    layout.tsx, page.tsx
+  components/ui/            # shadcn/ui components
+  generated/prisma/        # generated Prisma client (git-ignored)
+  lib/
+    prisma.ts              # PrismaClient singleton (pg driver adapter)
+    utils.ts               # cn() class helper
+  env.ts                   # Zod-validated environment variables
+```
+
+## Conventions
+
+- **Never read `process.env` directly** — import the validated `env` from `src/env.ts`.
+- **Never import `PrismaClient` directly** — import the shared `prisma` from
+  `src/lib/prisma.ts` (a single pooled client; one per request would exhaust connections).
+- **Generated code is not edited or linted** — `src/generated` is excluded from git,
+  ESLint, and Prettier, and regenerated by `prisma generate`.
+
+## Quality gate
+
+A Husky `pre-commit` hook runs `lint-staged` (ESLint `--fix` + Prettier on staged files)
+and then `tsc --noEmit`. A failing check aborts the commit. CI will be added once a remote
+and deploy target exist.
+
+## Notes for production (not yet configured)
+
+- **Connection pooling** at scale (PgBouncer or Prisma Accelerate) — local dev uses the
+  driver adapter's built-in `pg` pool.
+- **Migrations** in CI/production use `pnpm db:deploy` (no shadow database).
+- **Authentication & RBAC** for staff — to be designed with the application flow.

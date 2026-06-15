@@ -1,0 +1,13 @@
+# Native dependencies whose post-install build scripts we trust and want to run.
+# pnpm blocks all dependency build scripts by default (supply-chain safety);
+# only the packages set to `true` here are allowed to run their build scripts.
+#   - sharp:          native image pipeline used by next/image optimization
+#   - unrs-resolver:  native module resolver used by ESLint's import resolution
+#   - prisma engines: Prisma CLI/engine binaries needed for migrate & generate
+#   - esbuild:        bundler binary used by tsx (seed/script runner)
+allowBuilds:
+  sharp: true
+  unrs-resolver: true
+  "@prisma/engines": true
+  prisma: true
+  esbuild: true

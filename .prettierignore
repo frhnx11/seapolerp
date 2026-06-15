@@ -1,0 +1,12 @@
+# Dependencies & build output
+node_modules
+.next
+out
+build
+coverage
+
+# Lockfiles & generated artifacts
+pnpm-lock.yaml
+src/generated
+prisma/migrations
+next-env.d.ts
