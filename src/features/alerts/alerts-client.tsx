@@ -165,50 +165,48 @@ export function AlertsClient({
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="flex items-center gap-3 text-3xl font-bold text-gray-900">
           <AlertTriangle className="text-amber-600" size={32} />
           Alerts
         </h1>
-      </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative w-72">
-          <Search
-            className="absolute top-1/2 left-3 -translate-y-1/2 text-gray-400"
-            size={16}
-          />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by TO#, WO #, VT# or vehicle no..."
-            className="w-full rounded-xl border border-gray-200 py-2 pr-8 pl-9 text-sm transition outline-none focus:border-[#0483ca] focus:ring-2 focus:ring-[#0483ca]"
-          />
-          {search && (
-            <button
-              onClick={() => setSearch("")}
-              aria-label="Clear search"
-              className="absolute top-1/2 right-2.5 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-            >
-              <X size={14} />
-            </button>
-          )}
-        </div>
-        <select
-          value={ownerFilter}
-          onChange={(e) => setOwnerFilter(e.target.value)}
-          aria-label="Filter by truck owner"
-          className={selectClass}
-        >
-          <option value="ALL">All Truck Owners</option>
-          {owners.map((o) => (
-            <option key={o} value={o}>
-              {o}
-            </option>
-          ))}
-        </select>
-        <div className="ml-auto">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative w-72">
+            <Search
+              className="absolute top-1/2 left-3 -translate-y-1/2 text-gray-400"
+              size={16}
+            />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by TO#, WO #, VT# or vehicle no..."
+              className="w-full rounded-xl border border-gray-200 py-2 pr-8 pl-9 text-sm transition outline-none focus:border-[#0483ca] focus:ring-2 focus:ring-[#0483ca]"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                aria-label="Clear search"
+                className="absolute top-1/2 right-2.5 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          <select
+            value={ownerFilter}
+            onChange={(e) => setOwnerFilter(e.target.value)}
+            aria-label="Filter by truck owner"
+            className={selectClass}
+          >
+            <option value="ALL">All Truck Owners</option>
+            {owners.map((o) => (
+              <option key={o} value={o}>
+                {o}
+              </option>
+            ))}
+          </select>
           <MonthNavigator month={month} onChange={changeMonth} />
         </div>
       </div>
