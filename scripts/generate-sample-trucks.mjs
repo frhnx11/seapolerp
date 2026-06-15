@@ -1,7 +1,12 @@
-// Generates public/sample-trucks.xlsx — 100 random trucks for testing the
-// truck Excel upload. Indian plate numbers, mixed wheel counts, a small pool of
-// ~8 repeated owners, dates in DD-MM-YYYY (text) with most validity dates in the
-// future but ~30% of trucks carrying one or more expired dates.
+// Generates public/sample-trucks.xlsx — 100 trucks for testing the truck Excel
+// upload. Indian plate numbers, mixed wheel counts (incl. 16), the same owner
+// pool as the in-app sample dataset, dates in DD-MM-YYYY (text). Most validity
+// dates are in the future; exactly 10 trucks carry an expired date; none are
+// blocked — mirroring the in-app sample seed.
+//
+// Plates use RTO 50–99 so they never collide with the in-app sample-seeded
+// trucks (those use RTO 01–49); an Append upload onto a sample-seeded DB imports
+// all 100 with nothing skipped.
 //
 // Run: node scripts/generate-sample-trucks.mjs
 
@@ -34,9 +39,12 @@ const STATE_CODES = [
   "GA",
 ];
 const SERIES_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // skip I/O to avoid confusion
-const WHEELS = [10, 12, 14];
+const WHEELS = [10, 12, 14, 16];
+const EXPIRED_COUNT = 10; // the rest are active; none are blocked
 
-// A small pool of owners — many trucks per owner, like a real fleet.
+// A small pool of owners — many trucks per owner, like a real fleet. Must stay
+// in sync with SAMPLE_TRUCK_OWNERS in src/features/super-admin/sample-constants.ts
+// (uploads are rejected for any owner not in the Truck Owners master).
 const OWNERS = [
   "Rajesh Kumar",
   "Singh Logistics",
@@ -53,7 +61,8 @@ const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
 function vehicleNo() {
   const state = pick(STATE_CODES);
-  const rto = String(randInt(1, 49)).padStart(2, "0");
+  // RTO 50–99 keeps these plates disjoint from the in-app seed (which uses 01–49).
+  const rto = String(randInt(50, 99)).padStart(2, "0");
   const series = pick(SERIES_LETTERS) + pick(SERIES_LETTERS);
   const number = String(randInt(1, 9999)).padStart(4, "0");
   return `${state}${rto}${series}${number}`;
@@ -73,18 +82,16 @@ function dateFromOffset(days) {
 const futureDate = () => dateFromOffset(randInt(20, 900)); // ~3 weeks to ~2.5 yrs out
 const expiredDate = () => dateFromOffset(-randInt(1, 400)); // 1 day to ~13 months ago
 
-function makeTruck() {
-  // ~30% of trucks have at least one expired validity (1, 2, or all 3).
-  const fields = ["rc", "ins", "fc"];
+function makeTruck(expire) {
+  // Expired trucks carry 1–3 past validity dates; the rest are all in the future.
   const expired = new Set();
-  if (Math.random() < 0.3) {
+  if (expire) {
+    const fields = ["rc", "ins", "fc"];
     const shuffled = [...fields].sort(() => Math.random() - 0.5);
     for (const f of shuffled.slice(0, randInt(1, 3))) expired.add(f);
   }
-  // Blocked is an independent admin action (~15%); otherwise the Status column
-  // reflects the derived state: Expired if any date is expired, else Active.
-  const blocked = Math.random() < 0.15;
-  const status = blocked ? "Blocked" : expired.size > 0 ? "Expired" : "Active";
+  // None blocked; Status reflects the derived state (Expired if any date is past).
+  const status = expired.size > 0 ? "Expired" : "Active";
   return {
     vehicleNo: vehicleNo(),
     wheels: pick(WHEELS),
@@ -99,7 +106,8 @@ function makeTruck() {
 const seen = new Set();
 const trucks = [];
 while (trucks.length < 100) {
-  const truck = makeTruck();
+  // Only the first EXPIRED_COUNT trucks get a past validity date.
+  const truck = makeTruck(trucks.length < EXPIRED_COUNT);
   if (seen.has(truck.vehicleNo)) continue;
   seen.add(truck.vehicleNo);
   trucks.push(truck);
