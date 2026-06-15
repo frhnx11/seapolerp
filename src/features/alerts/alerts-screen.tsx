@@ -1,18 +1,30 @@
+import { shiftMonth } from "@/components/month";
 import { prisma } from "@/core/db";
+import { getTodayIso } from "@/features/trucks/truck";
 import { isNetDiscrepancy } from "@/features/work-orders/truck-order-lib";
 
 import { AlertsClient, type AlertRow } from "./alerts-client";
 
 /**
  * Net-weight discrepancy alerts across every work order — trips whose net sent
- * and net received differ by more than the tolerance. Filtered in JS (the
- * abs-difference comparison isn't expressible in the Prisma query builder; the
- * both-not-null `where` narrows to settled trips first).
+ * and net received differ by more than the tolerance. Scoped to the month the
+ * alert was created (when the party's net weight received was recorded), so the
+ * query never grows past one window. The abs-difference comparison isn't
+ * expressible in the Prisma query builder, so it's filtered in JS after the
+ * both-not-null + month `where` narrows to that month's settled trips.
  */
-export async function AlertsScreen() {
+export async function AlertsScreen({ month }: { month?: string }) {
+  const activeMonth = month ?? getTodayIso().slice(0, 7);
+  const start = new Date(`${activeMonth}-01T00:00:00.000Z`);
+  const end = new Date(`${shiftMonth(activeMonth, 1)}-01T00:00:00.000Z`);
+
   const trips = await prisma.truckOrder.findMany({
-    where: { netWeight: { not: null }, netWeightReceived: { not: null } },
-    orderBy: { seq: "desc" },
+    where: {
+      netWeight: { not: null },
+      netWeightReceived: { not: null },
+      netReceivedAt: { gte: start, lt: end },
+    },
+    orderBy: { netReceivedAt: "desc" },
     include: {
       workOrder: { select: { seq: true } },
       truck: { select: { vehicleNo: true, owner: { select: { name: true } } } },
@@ -45,5 +57,5 @@ export async function AlertsScreen() {
     }))
     .filter((r) => isNetDiscrepancy(r.netWeight, r.netWeightReceived));
 
-  return <AlertsClient rows={rows} />;
+  return <AlertsClient rows={rows} month={activeMonth} />;
 }

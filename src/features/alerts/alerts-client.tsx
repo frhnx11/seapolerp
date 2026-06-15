@@ -2,8 +2,12 @@
 
 import { AlertTriangle, Search, X } from "lucide-react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { LoadMoreFooter } from "@/components/load-more-footer";
+import { MonthNavigator, monthLabel } from "@/components/month-navigator";
+import { usePagination } from "@/components/use-pagination";
 import { formatQty } from "@/core/format";
 import { formatInvoiceNo } from "@/features/invoices/invoice-lib";
 import { InvoiceInfoModal } from "@/features/work-orders/invoice-info-modal";
@@ -115,11 +119,24 @@ const COLUMNS = [
   "Invoice",
 ];
 
-export function AlertsClient({ rows }: { rows: AlertRow[] }) {
+export function AlertsClient({
+  rows,
+  month,
+}: {
+  rows: AlertRow[];
+  /** Active month window "YYYY-MM" (by net-received date; server-scoped). */
+  month: string;
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
   const [search, setSearch] = useState("");
   const [ownerFilter, setOwnerFilter] = useState("ALL");
   const [invoiceInfo, setInvoiceInfo] = useState<AlertRow | null>(null);
   const [stageInfo, setStageInfo] = useState<StageInfo | null>(null);
+
+  // The month is the server-fetch window — change it via the URL.
+  const changeMonth = (m: string) =>
+    router.replace(`${pathname}?month=${m}`, { scroll: false });
 
   const owners = useMemo(
     () =>
@@ -141,55 +158,58 @@ export function AlertsClient({ rows }: { rows: AlertRow[] }) {
     });
   }, [rows, search, ownerFilter]);
 
+  const { visible, hasMore, shown, total, loadMore } = usePagination(
+    filtered,
+    `${month}|${search}|${ownerFilter}`,
+  );
+
   return (
     <div className="mx-auto max-w-[1600px] space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="flex items-center gap-3 text-3xl font-bold text-gray-900">
-            <AlertTriangle className="text-amber-600" size={32} />
-            Alerts
-          </h1>
-          <p className="mt-1 text-gray-500">
-            Truck orders where net sent and net received differ by more than 0.3
-            MT
-          </p>
+      <div className="flex items-center justify-between">
+        <h1 className="flex items-center gap-3 text-3xl font-bold text-gray-900">
+          <AlertTriangle className="text-amber-600" size={32} />
+          Alerts
+        </h1>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative w-72">
+          <Search
+            className="absolute top-1/2 left-3 -translate-y-1/2 text-gray-400"
+            size={16}
+          />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by TO#, WO #, VT# or vehicle no..."
+            className="w-full rounded-xl border border-gray-200 py-2 pr-8 pl-9 text-sm transition outline-none focus:border-[#0483ca] focus:ring-2 focus:ring-[#0483ca]"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              aria-label="Clear search"
+              className="absolute top-1/2 right-2.5 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative w-72">
-            <Search
-              className="absolute top-1/2 left-3 -translate-y-1/2 text-gray-400"
-              size={16}
-            />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by TO#, WO #, VT# or vehicle no..."
-              className="w-full rounded-xl border border-gray-200 py-2 pr-8 pl-9 text-sm transition outline-none focus:border-[#0483ca] focus:ring-2 focus:ring-[#0483ca]"
-            />
-            {search && (
-              <button
-                onClick={() => setSearch("")}
-                aria-label="Clear search"
-                className="absolute top-1/2 right-2.5 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-          <select
-            value={ownerFilter}
-            onChange={(e) => setOwnerFilter(e.target.value)}
-            aria-label="Filter by truck owner"
-            className={selectClass}
-          >
-            <option value="ALL">All Truck Owners</option>
-            {owners.map((o) => (
-              <option key={o} value={o}>
-                {o}
-              </option>
-            ))}
-          </select>
+        <select
+          value={ownerFilter}
+          onChange={(e) => setOwnerFilter(e.target.value)}
+          aria-label="Filter by truck owner"
+          className={selectClass}
+        >
+          <option value="ALL">All Truck Owners</option>
+          {owners.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </select>
+        <div className="ml-auto">
+          <MonthNavigator month={month} onChange={changeMonth} />
         </div>
       </div>
 
@@ -210,7 +230,7 @@ export function AlertsClient({ rows }: { rows: AlertRow[] }) {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.length > 0 ? (
-                filtered.map((r) => (
+                visible.map((r) => (
                   <tr key={r.id} className="align-top">
                     <td className="px-4 py-3.5 text-center text-sm font-semibold whitespace-nowrap text-gray-900">
                       {formatTruckOrderNo(r.seq)}
@@ -341,12 +361,12 @@ export function AlertsClient({ rows }: { rows: AlertRow[] }) {
                     />
                     <h3 className="mb-1 text-lg font-semibold text-gray-900">
                       {rows.length === 0
-                        ? "No alerts"
+                        ? `No alerts in ${monthLabel(month)}`
                         : "No alerts match the current filters"}
                     </h3>
                     <p className="text-gray-500">
                       {rows.length === 0
-                        ? "Trips appear here only when net sent and net received differ by more than 0.3 MT."
+                        ? "No net-weight discrepancies were recorded this month."
                         : "Try a different search or filter."}
                     </p>
                   </td>
@@ -356,6 +376,14 @@ export function AlertsClient({ rows }: { rows: AlertRow[] }) {
           </table>
         </div>
       </div>
+
+      <LoadMoreFooter
+        shown={shown}
+        total={total}
+        hasMore={hasMore}
+        noun="alerts"
+        onLoadMore={loadMore}
+      />
 
       {invoiceInfo?.invoiceId && invoiceInfo.invoiceSeq !== null && (
         <InvoiceInfoModal
