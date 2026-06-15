@@ -1,0 +1,16 @@
+# Railway/Nixpacks ships an old bundled corepack (0.24.1) that crashes when it
+# runs pnpm 11 on Node 24 (ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING). Override the
+# install phase to upgrade corepack first, then install with the pinned pnpm
+# (from package.json "packageManager"). Keeps pnpm 11.5.2 so the committed
+# lockfile (v9.0) is an exact match.
+
+[variables]
+# Don't prompt before corepack downloads pnpm (would hang in CI).
+COREPACK_ENABLE_DOWNLOAD_PROMPT = "0"
+
+[phases.install]
+cmds = [
+  "npm install -g corepack@latest",
+  "corepack enable",
+  "pnpm install --frozen-lockfile",
+]
