@@ -10,6 +10,7 @@ export type NavKey =
   | "profile"
   | "masterData"
   | "workOrders"
+  | "truckOrders"
   | "invoices"
   | "alerts"
   | "vessels";
@@ -56,6 +57,7 @@ const ADMIN_NAV: NavItemConfig[] = [
   { name: "Dashboard", href: "/admin", icon: "dashboard" },
   { name: "Vessels", href: "/admin/vessels", icon: "vessels" },
   { name: "Work Orders", href: "/admin/work-orders", icon: "workOrders" },
+  { name: "Truck Orders", href: "/admin/truck-orders", icon: "truckOrders" },
   { name: "Invoices", href: "/admin/invoices", icon: "invoices" },
   { name: "Alerts", href: "/admin/alerts", icon: "alerts" },
   { name: "Master Data", href: "/admin/master-data", icon: "masterData" },
