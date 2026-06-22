@@ -35,13 +35,6 @@ export default async function PrintVtPage({
     include: {
       truck: { select: { vehicleNo: true } },
       loadingSite: { select: { name: true } },
-      workOrder: {
-        include: {
-          vessel: { select: { name: true } },
-          cargoType: { select: { name: true } },
-          party: { select: { name: true } },
-        },
-      },
     },
   });
   if (!trip) notFound();
@@ -51,9 +44,6 @@ export default async function PrintVtPage({
     vehicleNo: trip.truck.vehicleNo,
     loadingSiteName: trip.loadingSite?.name ?? null,
     loadingSlipAt: trip.loadingSlipAt?.toISOString() ?? null,
-    vesselName: trip.workOrder.vessel.name,
-    cargoTypeName: trip.workOrder.cargoType.name,
-    partyName: trip.workOrder.party.name,
   };
 
   return (

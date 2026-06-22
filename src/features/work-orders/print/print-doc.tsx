@@ -8,10 +8,6 @@ export type TruckOrderPrintData = {
   vehicleNo: string;
   loadingSiteName: string | null;
   loadingSlipAt: string | null;
-  // work-order context
-  vesselName: string;
-  cargoTypeName: string;
-  partyName: string;
 };
 
 /** ISO timestamp -> "DD-MM-YYYY" (the format used on the paper chits). */

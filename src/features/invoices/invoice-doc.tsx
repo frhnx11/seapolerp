@@ -15,6 +15,7 @@ export type InvoiceDocData = {
   truckOwner: string;
   rate: number; // ₹/MT
   discountPct: number;
+  remarks?: string | null; // optional free text (e.g. the discount reason)
   workOrder: {
     woNumber: string;
     vesselName: string;
@@ -22,12 +23,13 @@ export type InvoiceDocData = {
     partyName: string;
     cargoTypeName: string;
   };
-  /** One row per trip; qty = the trip's lowest net weight (MT). */
+  /** One row per trip; qty = lowest net weight, diff = |net sent − received| (MT). */
   trips: {
     id: string;
     vtNumber: string | null;
     vehicleNo: string;
     qty: number;
+    diff: number;
   }[];
 };
 
@@ -110,6 +112,7 @@ export function InvoiceDocView({ data }: { data: InvoiceDocData }) {
             <th className="px-3 py-2">VT #</th>
             <th className="px-3 py-2">Vehicle No</th>
             <th className="px-3 py-2 text-right">Lowest Net Wt (MT)</th>
+            <th className="px-3 py-2 text-right">Net Wt Diff (MT)</th>
             <th className="px-3 py-2 text-right">Rate (₹/MT)</th>
             <th className="py-2 pl-3 text-right">Amount</th>
           </tr>
@@ -123,6 +126,7 @@ export function InvoiceDocView({ data }: { data: InvoiceDocData }) {
               <td className="px-3 py-1.5 font-medium">{t.vtNumber ?? "—"}</td>
               <td className="px-3 py-1.5">{t.vehicleNo}</td>
               <td className="px-3 py-1.5 text-right">{formatQty(t.qty)}</td>
+              <td className="px-3 py-1.5 text-right">{formatQty(t.diff)}</td>
               <td className="px-3 py-1.5 text-right">{formatQty(data.rate)}</td>
               <td className="py-1.5 pl-3 text-right font-medium">
                 {formatInr(t.qty * data.rate)}
@@ -160,6 +164,16 @@ export function InvoiceDocView({ data }: { data: InvoiceDocData }) {
           </div>
         </div>
       </div>
+
+      {/* Remarks */}
+      {data.remarks && (
+        <div className="mt-6 text-sm">
+          <span className="font-semibold text-gray-700">Remarks: </span>
+          <span className="whitespace-pre-wrap text-gray-600">
+            {data.remarks}
+          </span>
+        </div>
+      )}
 
       {/* Signature */}
       <div className="mt-12 flex justify-end">

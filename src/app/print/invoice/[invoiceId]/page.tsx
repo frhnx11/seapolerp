@@ -5,7 +5,11 @@ import { auth } from "@/core/auth/auth";
 import { prisma } from "@/core/db";
 import { roleHome } from "@/core/shell/portal-config";
 import { InvoiceDocView } from "@/features/invoices/invoice-doc";
-import { formatInvoiceNo, lowestNet } from "@/features/invoices/invoice-lib";
+import {
+  formatInvoiceNo,
+  lowestNet,
+  netWeightDiff,
+} from "@/features/invoices/invoice-lib";
 import { PrintToolbar } from "@/features/work-orders/print/print-toolbar";
 import { formatWoNumber } from "@/features/work-orders/work-order";
 
@@ -60,6 +64,7 @@ export default async function PrintInvoicePage({
             truckOwner: invoice.truckOwner,
             rate: invoice.rate.toNumber(),
             discountPct: invoice.discountPct.toNumber(),
+            remarks: invoice.remarks,
             workOrder: {
               woNumber: formatWoNumber(invoice.workOrder.seq),
               vesselName: invoice.workOrder.vessel.name,
@@ -67,15 +72,19 @@ export default async function PrintInvoicePage({
               partyName: invoice.workOrder.party.name,
               cargoTypeName: invoice.workOrder.cargoType.name,
             },
-            trips: invoice.truckOrders.map((t) => ({
-              id: t.id,
-              vtNumber: t.vtNumber,
-              vehicleNo: t.truck.vehicleNo,
-              qty: lowestNet({
+            trips: invoice.truckOrders.map((t) => {
+              const weights = {
                 netWeight: t.netWeight!.toNumber(),
                 netWeightReceived: t.netWeightReceived!.toNumber(),
-              }),
-            })),
+              };
+              return {
+                id: t.id,
+                vtNumber: t.vtNumber,
+                vehicleNo: t.truck.vehicleNo,
+                qty: lowestNet(weights),
+                diff: netWeightDiff(weights),
+              };
+            }),
           }}
         />
       </div>

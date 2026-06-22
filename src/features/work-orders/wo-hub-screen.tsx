@@ -3,7 +3,6 @@ import {
   FileText,
   type LucideIcon,
   ReceiptText,
-  Truck,
 } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -25,23 +24,13 @@ type SectionCard = {
 const SECTION_CARDS: SectionCard[] = [
   {
     title: "Truck Orders",
-    description: "Truck orders under this work order.",
+    description: "Truck orders mapped to this work order.",
     segment: "truck-orders",
     icon: ReceiptText,
     tile: "bg-blue-100",
     iconColor: "text-blue-600",
     hover: "hover:border-blue-300",
     view: "text-blue-600",
-  },
-  {
-    title: "Allotted Trucks",
-    description: "Trucks assigned to deliver this work order's goods.",
-    segment: "allotted-trucks",
-    icon: Truck,
-    tile: "bg-emerald-100",
-    iconColor: "text-emerald-600",
-    hover: "hover:border-emerald-300",
-    view: "text-emerald-600",
   },
 ];
 

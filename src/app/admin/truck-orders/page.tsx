@@ -1,4 +1,6 @@
-/** Admin → Truck Orders. Intentionally blank for now. */
+import { TruckOrdersScreen } from "@/features/work-orders/truck-orders-screen";
+
+/** Admin → Truck Orders (global). Full view + edit of every trip. */
 export default function AdminTruckOrdersPage() {
-  return <div className="mx-auto max-w-[1600px]" />;
+  return <TruckOrdersScreen variant="admin" />;
 }

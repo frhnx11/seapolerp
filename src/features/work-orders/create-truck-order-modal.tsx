@@ -1,8 +1,10 @@
 "use client";
 
-import { Check, ChevronDown, Trash2, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Trash2, X } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
+
+import { SearchableSelect } from "@/components/searchable-select";
 
 import {
   createTruckOrder,
@@ -10,6 +12,7 @@ import {
   updateTare,
 } from "./truck-order-actions";
 import {
+  type EditLock,
   formatTruckOrderNo,
   type TruckOrderRow,
   type TruckOption,
@@ -25,27 +28,26 @@ const inputClass =
  * open, view-only once completed; saving closes the popup.
  */
 export function CreateTruckOrderModal({
-  workOrderId,
   trucks,
   trip,
+  lock = { canEdit: true, reason: null },
   onClose,
   onSaved,
   onDeleted,
 }: {
-  workOrderId: string;
   trucks: TruckOption[];
   /** When set, the modal edits/views this trip's tare instead of creating. */
   trip?: TruckOrderRow;
+  /** Tare edit window — ignored in create mode (always editable). */
+  lock?: EditLock;
   onClose: () => void;
   onSaved: () => void;
   /** Called after a successful delete (edit mode only). */
   onDeleted?: () => void;
 }) {
   const isEdit = Boolean(trip);
-  const locked = trip?.status === "COMPLETED";
+  const locked = isEdit && !lock.canEdit;
   const [truckId, setTruckId] = useState("");
-  const [truckQuery, setTruckQuery] = useState("");
-  const [listOpen, setListOpen] = useState(false);
   const [tareWeight, setTareWeight] = useState(
     trip ? String(trip.tareWeight) : "",
   );
@@ -55,7 +57,7 @@ export function CreateTruckOrderModal({
   const [deleting, setDeleting] = useState(false);
 
   // Save is enabled only once the tare differs from what's persisted.
-  const dirty = isEdit && tareWeight !== String(trip!.tareWeight);
+  const dirty = isEdit && !locked && tareWeight !== String(trip!.tareWeight);
   // A trip is deletable only while nothing beyond the tare has happened.
   const canDelete = isEdit && trip?.status === "TARE_RECORDED";
 
@@ -71,24 +73,6 @@ export function CreateTruckOrderModal({
       setConfirmingDelete(false);
       setError(result.error ?? "Failed to delete truck order");
     }
-  }
-
-  const matches = useMemo(() => {
-    const q = truckQuery.trim().toLowerCase();
-    if (!q) return trucks;
-    return trucks.filter((t) => t.vehicleNo.toLowerCase().includes(q));
-  }, [trucks, truckQuery]);
-
-  function pickTruck(t: TruckOption) {
-    setTruckId(t.id);
-    setTruckQuery(t.vehicleNo);
-    setListOpen(false);
-  }
-
-  function clearTruck() {
-    setTruckId("");
-    setTruckQuery("");
-    setListOpen(true);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -114,7 +98,7 @@ export function CreateTruckOrderModal({
       return;
     }
 
-    const result = await createTruckOrder(workOrderId, {
+    const result = await createTruckOrder({
       truckId,
       tareWeight: Number(tareWeight),
     });
@@ -193,57 +177,19 @@ export function CreateTruckOrderModal({
               >
                 Truck<span className="text-red-500"> *</span>
               </label>
-              <div className="relative">
-                <input
-                  id="vt-truck"
-                  value={truckQuery}
-                  onChange={(e) => {
-                    setTruckQuery(e.target.value);
-                    setTruckId("");
-                    setListOpen(true);
-                  }}
-                  onFocus={() => setListOpen(true)}
-                  placeholder="Search allotted trucks..."
-                  autoComplete="off"
-                  className={`${inputClass} pr-10`}
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    truckId ? clearTruck() : setListOpen((o) => !o)
-                  }
-                  aria-label={truckId ? "Clear truck" : "Toggle truck list"}
-                  className="absolute top-1/2 right-3 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {truckId ? <X size={18} /> : <ChevronDown size={18} />}
-                </button>
-
-                {listOpen && !truckId && (
-                  <div className="absolute z-10 mt-1 max-h-52 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
-                    {matches.length > 0 ? (
-                      matches.map((t) => (
-                        <button
-                          key={t.id}
-                          type="button"
-                          onClick={() => pickTruck(t)}
-                          className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm font-medium text-gray-800 transition-colors hover:bg-blue-50"
-                        >
-                          {t.vehicleNo}
-                          {truckId === t.id && (
-                            <Check size={16} className="text-[#0483ca]" />
-                          )}
-                        </button>
-                      ))
-                    ) : (
-                      <p className="px-4 py-3 text-sm text-gray-500">
-                        No allotted truck matches “{truckQuery}”.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
+              <SearchableSelect
+                id="vt-truck"
+                options={trucks}
+                value={truckId || null}
+                onChange={(id) => setTruckId(id ?? "")}
+                getKey={(t) => t.id}
+                getLabel={(t) => t.vehicleNo}
+                getSearchText={(t) => t.vehicleNo}
+                placeholder="Search allotted trucks..."
+                emptyText="No allotted truck matches your search."
+              />
               <p className="mt-1 text-xs text-gray-500">
-                Only trucks allotted to this work order can start a trip.
+                Only trucks in the allotted pool can start a trip.
               </p>
             </div>
           )}
@@ -267,16 +213,18 @@ export function CreateTruckOrderModal({
               className={inputClass}
               placeholder="e.g. 14.620"
             />
-            {locked && (
-              <p className="mt-1 text-xs text-gray-500">
-                Weights are locked — the net has been added to the work
-                order&apos;s delivered quantity.
-              </p>
+            {locked && lock.reason && (
+              <p className="mt-1 text-xs text-gray-500">{lock.reason}</p>
             )}
           </div>
 
           {isEdit && trip && (
-            <LastUpdatedLine by={trip.tareByName} at={trip.tareAt} />
+            <LastUpdatedLine
+              by={trip.tareByName}
+              at={trip.tareAt}
+              firstBy={trip.tareFirstByName}
+              firstAt={trip.createdAt}
+            />
           )}
 
           {error && (

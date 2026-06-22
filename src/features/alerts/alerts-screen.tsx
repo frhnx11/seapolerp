@@ -36,8 +36,10 @@ export async function AlertsScreen({ month }: { month?: string }) {
     .map((t) => ({
       id: t.id,
       seq: t.seq,
-      woId: t.workOrderId,
-      woSeq: t.workOrder.seq,
+      // A trip with net weights recorded has passed the gross stage, so it is
+      // always mapped to a work order (same guarantee as the weights below).
+      woId: t.workOrderId!,
+      woSeq: t.workOrder!.seq,
       vtNumber: t.vtNumber,
       vehicleNo: t.truck.vehicleNo,
       owner: t.truck.owner.name,

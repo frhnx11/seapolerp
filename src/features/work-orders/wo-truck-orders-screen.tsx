@@ -4,12 +4,19 @@ import { notFound } from "next/navigation";
 
 import { prisma } from "@/core/db";
 
-import { type TruckOrderRow, type TruckOrderStatus } from "./truck-order-lib";
+import { fetchWorkOrderOptions } from "./truck-order-options";
+import { toTruckOrderRow, truckOrderInclude } from "./truck-order-row";
 import { TruckOrdersClient } from "./truck-orders-client";
 import { formatWoNumber } from "./work-order";
 import { fetchWoHeader } from "./wo-header";
 
-/** Truck Orders for a work order — the pipeline grid (shared across portals). */
+/**
+ * A single work order's Truck Orders. Trips are created on the global Truck
+ * Orders page (a new trip has no work order yet); they appear here once the gross
+ * stage maps them to this work order. Editing the port stages (loading slip,
+ * gross incl. re-picking the WO) and net received is allowed here too — same
+ * server actions as the global page — but there is no "Create" button.
+ */
 export async function WoTruckOrdersScreen({
   id,
   basePath,
@@ -17,76 +24,30 @@ export async function WoTruckOrdersScreen({
 }: {
   id: string;
   basePath: string;
-  /** "party"/"accountant" are read-only; "admin" sees + edits everything. */
+  /** Drives which columns are shown and editable (port/party/accountant/admin). */
   variant?: "port" | "party" | "accountant" | "admin";
 }) {
   const workOrder = await fetchWoHeader(id);
   if (!workOrder) notFound();
 
-  // Only port and admin create trips or issue slips, so the read-only views
-  // don't need the truck/loading-site option lists.
-  const needsPortOptions = variant === "port" || variant === "admin";
-  const [trips, allotments, loadingSites] = await Promise.all([
+  // Port/admin edit the port stages here, so they need the option lists; the
+  // other portals don't. No trucks list — trips are never created from inside a
+  // single work order.
+  const isEditor = variant === "port" || variant === "admin";
+  const [trips, loadingSites, workOrders] = await Promise.all([
     prisma.truckOrder.findMany({
       where: { workOrderId: workOrder.id },
       orderBy: { seq: "desc" },
-      include: {
-        truck: {
-          select: {
-            vehicleNo: true,
-            wheels: true,
-            owner: { select: { name: true } },
-          },
-        },
-        loadingSite: { select: { name: true } },
-        invoice: { select: { seq: true } },
-      },
+      include: truckOrderInclude,
     }),
-    !needsPortOptions
-      ? Promise.resolve([])
-      : prisma.workOrderTruck.findMany({
-          where: {
-            workOrderId: workOrder.id,
-            blocked: false,
-            truck: { status: { not: "BLOCKED" } },
-          },
-          select: { truck: { select: { id: true, vehicleNo: true } } },
-          orderBy: { truck: { vehicleNo: "asc" } },
-        }),
-    !needsPortOptions
+    !isEditor
       ? Promise.resolve([])
       : prisma.loadingSite.findMany({
           orderBy: { name: "asc" },
           select: { id: true, name: true },
         }),
+    !isEditor ? Promise.resolve([]) : fetchWorkOrderOptions(),
   ]);
-
-  const rows: TruckOrderRow[] = trips.map((t) => ({
-    id: t.id,
-    seq: t.seq,
-    status: t.status as TruckOrderStatus,
-    truckId: t.truckId,
-    vehicleNo: t.truck.vehicleNo,
-    wheels: t.truck.wheels,
-    owner: t.truck.owner.name,
-    tareWeight: t.tareWeight.toNumber(),
-    tareByName: t.tareByName,
-    tareAt: t.tareAt.toISOString(),
-    loadingSiteId: t.loadingSiteId,
-    loadingSiteName: t.loadingSite?.name ?? null,
-    loadingSlipByName: t.loadingSlipByName,
-    loadingSlipAt: t.loadingSlipAt?.toISOString() ?? null,
-    vtNumber: t.vtNumber,
-    grossWeight: t.grossWeight?.toNumber() ?? null,
-    netWeight: t.netWeight?.toNumber() ?? null,
-    completedByName: t.completedByName,
-    completedAt: t.completedAt?.toISOString() ?? null,
-    netWeightReceived: t.netWeightReceived?.toNumber() ?? null,
-    netReceivedByName: t.netReceivedByName,
-    netReceivedAt: t.netReceivedAt?.toISOString() ?? null,
-    invoiceId: t.invoiceId,
-    invoiceSeq: t.invoice?.seq ?? null,
-  }));
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6">
@@ -99,12 +60,11 @@ export async function WoTruckOrdersScreen({
       </Link>
 
       <TruckOrdersClient
-        workOrderId={workOrder.id}
-        wo={workOrder}
-        trips={rows}
-        trucks={allotments.map((a) => a.truck)}
+        trips={trips.map(toTruckOrderRow)}
         loadingSites={loadingSites}
+        workOrders={workOrders}
         variant={variant}
+        allowCreate={false}
       />
     </div>
   );

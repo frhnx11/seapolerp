@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Search, Truck as TruckIcon, X } from "lucide-react";
+import { Check, Minus, Search, Truck as TruckIcon, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -14,8 +14,6 @@ import {
   WHEELS,
   wheelsLabel,
 } from "@/features/trucks/truck";
-
-import { setAllottedTrucks } from "./allot-actions";
 
 const COLUMNS = [
   "", // checkbox
@@ -39,18 +37,25 @@ function sameSet(a: Set<string>, b: Set<string>) {
   return true;
 }
 
+/**
+ * Truck-picker for allotment. Context-agnostic: it gathers a selection and hands
+ * it to `onSave`, so the same modal serves both the global allotted-trucks pool
+ * and a per-work-order allotment (each caller supplies its own save action).
+ * Blocked trucks (master status) sink to the bottom and can only be un-ticked.
+ */
 export function AllotTrucksModal({
-  workOrderId,
   trucks,
   initialSelectedIds,
   todayIso,
+  onSave,
   onClose,
   onSaved,
 }: {
-  workOrderId: string;
   trucks: Truck[];
   initialSelectedIds: string[];
   todayIso: string;
+  /** Persists the chosen truck ids. Resolves to the standard action result. */
+  onSave: (truckIds: string[]) => Promise<{ ok: boolean; error?: string }>;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -110,6 +115,36 @@ export function AllotTrucksModal({
     `${search}|${ownerFilter}|${typeFilter}|${statusFilter}`,
   );
 
+  // "Select all" acts on the whole filtered list (every search/filter match, not
+  // just the loaded page), and only on rows that may be ticked — blocked trucks
+  // can't be newly selected, so they're never targets.
+  const selectableFilteredIds = useMemo(
+    () =>
+      filtered
+        .filter((t) => displayStatus(t, todayIso) !== "BLOCKED")
+        .map((t) => t.id),
+    [filtered, todayIso],
+  );
+  const allSelected =
+    selectableFilteredIds.length > 0 &&
+    selectableFilteredIds.every((id) => selected.has(id));
+  const someSelected = selectableFilteredIds.some((id) => selected.has(id));
+
+  function toggleAll() {
+    if (selectableFilteredIds.length === 0) return;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      // All targets already ticked → clear them (only the filtered ones, so
+      // selections made under other filters stay put); otherwise tick them all.
+      if (allSelected) {
+        for (const id of selectableFilteredIds) next.delete(id);
+      } else {
+        for (const id of selectableFilteredIds) next.add(id);
+      }
+      return next;
+    });
+  }
+
   function toggle(truck: Truck) {
     const isSelected = selected.has(truck.id);
     const blocked = displayStatus(truck, todayIso) === "BLOCKED";
@@ -131,7 +166,7 @@ export function AllotTrucksModal({
 
   async function handleSave() {
     setSaving(true);
-    const result = await setAllottedTrucks(workOrderId, [...selected]);
+    const result = await onSave([...selected]);
     setSaving(false);
     if (result.ok) {
       toast.success("Allotted trucks updated");
@@ -232,7 +267,36 @@ export function AllotTrucksModal({
                       i === 0 ? "w-12" : ""
                     }`}
                   >
-                    {h}
+                    {i === 0 ? (
+                      <button
+                        type="button"
+                        onClick={toggleAll}
+                        disabled={selectableFilteredIds.length === 0}
+                        role="checkbox"
+                        aria-checked={
+                          allSelected
+                            ? "true"
+                            : someSelected
+                              ? "mixed"
+                              : "false"
+                        }
+                        aria-label="Select all"
+                        title={allSelected ? "Deselect all" : "Select all"}
+                        className={`flex h-5 w-5 items-center justify-center rounded border transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                          allSelected || someSelected
+                            ? "border-[#0483ca] bg-[#0483ca]"
+                            : "border-gray-300 bg-white"
+                        }`}
+                      >
+                        {allSelected ? (
+                          <Check size={14} className="text-white" />
+                        ) : someSelected ? (
+                          <Minus size={14} className="text-white" />
+                        ) : null}
+                      </button>
+                    ) : (
+                      h
+                    )}
                   </th>
                 ))}
               </tr>

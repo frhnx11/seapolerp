@@ -83,7 +83,7 @@ export async function createInvoice(workOrderId: string, input: InvoiceInput) {
         error: parsed.error.issues[0]?.message ?? "Invalid input",
       };
     }
-    const { date, truckOwner, tripIds, discountPct } = parsed.data;
+    const { date, truckOwner, tripIds, discountPct, remarks } = parsed.data;
 
     const created = await prisma.$transaction(
       async (tx) => {
@@ -123,6 +123,7 @@ export async function createInvoice(workOrderId: string, input: InvoiceInput) {
             amount,
             discountPct,
             finalAmount,
+            remarks: remarks?.trim() || null,
             createdByName: session.user.name,
           },
           select: { id: true, seq: true },
@@ -166,7 +167,7 @@ export async function updateInvoice(invoiceId: string, input: InvoiceInput) {
         error: parsed.error.issues[0]?.message ?? "Invalid input",
       };
     }
-    const { date, truckOwner, tripIds, discountPct } = parsed.data;
+    const { date, truckOwner, tripIds, discountPct, remarks } = parsed.data;
 
     const updated = await prisma.$transaction(
       async (tx) => {
@@ -224,6 +225,7 @@ export async function updateInvoice(invoiceId: string, input: InvoiceInput) {
             amount,
             discountPct,
             finalAmount,
+            remarks: remarks?.trim() || null,
           },
         });
         return invoice;

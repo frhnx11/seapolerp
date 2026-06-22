@@ -32,7 +32,7 @@ function toMessage(error: unknown, op: string): string {
       return "A truck with this Vehicle No already exists.";
     }
     if (code === "P2003") {
-      return "This truck is allotted to one or more work orders and can't be deleted.";
+      return "This truck has truck orders recorded against it and can't be deleted.";
     }
   }
   return error instanceof Error ? error.message : `Failed to ${op} truck`;

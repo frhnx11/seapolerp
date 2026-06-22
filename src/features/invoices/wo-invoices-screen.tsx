@@ -64,6 +64,7 @@ export async function WoInvoicesScreen({
     amount: inv.amount.toNumber(),
     discountPct: inv.discountPct.toNumber(),
     finalAmount: inv.finalAmount.toNumber(),
+    remarks: inv.remarks,
     tripIds: inv.truckOrders.map((t) => t.id),
   }));
 

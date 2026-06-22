@@ -4,6 +4,7 @@ import { Printer, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { SearchableSelect } from "@/components/searchable-select";
 import { formatQty } from "@/core/format";
 
 import {
@@ -12,12 +13,13 @@ import {
   recordNetReceived,
 } from "./truck-order-actions";
 import {
+  type EditLock,
   formatStamp,
   formatTruckOrderNo,
   type TruckOrderRow,
+  type WorkOrderOption,
 } from "./truck-order-lib";
-import { type Option } from "./work-order";
-import { type WoHeaderData } from "./wo-header";
+import { formatWoNumber, type Option } from "./work-order";
 
 const inputClass =
   "w-full rounded-lg border border-gray-300 px-4 py-2.5 outline-none focus:border-transparent focus:ring-2 focus:ring-[#0483ca]";
@@ -26,20 +28,48 @@ export type StageKey = "loadingSlip" | "gross" | "netReceived";
 
 type SaveResult = { ok: true } | { ok: false; error?: string };
 
-/** "Last updated by" line shown in stage popups once the stage has been saved. */
+/**
+ * Stamp lines shown in stage popups once the value has been recorded: who last
+ * edited it (and when), plus the immutable first-entry stamp — who first
+ * recorded it and when. First entry is the anchor of the 30-minute editing
+ * window and never changes, so the operator can gauge how much of it is left.
+ */
 export function LastUpdatedLine({
   by,
   at,
+  firstBy,
+  firstAt,
 }: {
   by: string | null;
   at?: string | null;
+  firstBy?: string | null;
+  firstAt?: string | null;
 }) {
-  if (!by) return null;
+  if (!by && !firstBy && !firstAt) return null;
   return (
-    <p className="text-xs text-gray-500">
-      Last updated by: <span className="font-medium text-gray-700">{by}</span>
-      {at && <> · {formatStamp(at)}</>}
-    </p>
+    <div className="space-y-0.5 text-xs text-gray-500">
+      {by && (
+        <p>
+          Last updated by:{" "}
+          <span className="font-medium text-gray-700">{by}</span>
+          {at && <> · {formatStamp(at)}</>}
+        </p>
+      )}
+      {(firstBy || firstAt) && (
+        <p>
+          First entered by:{" "}
+          {firstBy && (
+            <span className="font-medium text-gray-700">{firstBy}</span>
+          )}
+          {firstBy && firstAt && " · "}
+          {firstAt && (
+            <span className="font-medium text-gray-700">
+              {formatStamp(firstAt)}
+            </span>
+          )}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -59,6 +89,8 @@ function StageModalShell({
   printHref,
   lastUpdatedBy,
   lastUpdatedAt,
+  firstEnteredByName,
+  firstEnteredAt,
   onClose,
   onSubmit,
   children,
@@ -75,6 +107,10 @@ function StageModalShell({
   lastUpdatedBy?: string | null;
   /** When that save happened, shown beside the name. */
   lastUpdatedAt?: string | null;
+  /** Who first recorded this value (immutable); omitted until entered. */
+  firstEnteredByName?: string | null;
+  /** Immutable first-entry time — the edit-window anchor; omitted until entered. */
+  firstEnteredAt?: string | null;
   onClose: () => void;
   onSubmit: (e: React.FormEvent) => void;
   children: React.ReactNode;
@@ -104,7 +140,12 @@ function StageModalShell({
 
           {children}
 
-          <LastUpdatedLine by={lastUpdatedBy ?? null} at={lastUpdatedAt} />
+          <LastUpdatedLine
+            by={lastUpdatedBy ?? null}
+            at={lastUpdatedAt}
+            firstBy={firstEnteredByName}
+            firstAt={firstEnteredAt}
+          />
 
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">
@@ -197,13 +238,13 @@ function useStageSave(
 
 export function LoadingSlipModal({
   trip,
-  wo,
+  lock,
   loadingSites,
   onClose,
   onSaved,
 }: {
   trip: TruckOrderRow;
-  wo: WoHeaderData;
+  lock: EditLock;
   loadingSites: Option[];
   onClose: () => void;
   onSaved: () => void;
@@ -214,9 +255,9 @@ export function LoadingSlipModal({
   );
   const [loading, error, run] = useStageSave(onSaved, "Loading slip recorded");
 
-  // Once the party records the received weight the trip is closed for good;
-  // the slip stays viewable/printable but its site can't change.
-  const locked = trip.netWeightReceived !== null;
+  // Past its 30-minute window (or invoiced) the slip stays viewable/printable
+  // but its site can't change.
+  const locked = !lock.canEdit;
   const current = JSON.stringify([loadingSiteId]);
   const dirty = !locked && snapshot !== current;
 
@@ -231,6 +272,8 @@ export function LoadingSlipModal({
       printHref={`/print/truck-order/${trip.id}/loading-slip`}
       lastUpdatedBy={trip.loadingSlipByName}
       lastUpdatedAt={trip.loadingSlipAt}
+      firstEnteredByName={trip.loadingSlipFirstByName}
+      firstEnteredAt={trip.loadingSlipFirstAt}
       onClose={onClose}
       onSubmit={async (e) => {
         e.preventDefault();
@@ -240,12 +283,6 @@ export function LoadingSlipModal({
         if (ok) setSnapshot(current);
       }}
     >
-      <div className="space-y-1.5 rounded-lg border border-gray-100 bg-gray-50/60 p-4">
-        <InfoRow label="Vessel" value={wo.vesselName} />
-        <InfoRow label="Cargo" value={wo.cargoTypeName} />
-        <InfoRow label="Party" value={wo.partyName} />
-      </div>
-
       <div>
         <label className="mb-1 block text-sm font-medium text-gray-700">
           Loading Site<span className="text-red-500"> *</span>
@@ -266,11 +303,8 @@ export function LoadingSlipModal({
             </option>
           ))}
         </select>
-        {locked && (
-          <p className="mt-1 text-xs text-gray-500">
-            Net weight received has been recorded — the trip is closed and the
-            loading slip is locked.
-          </p>
+        {locked && lock.reason && (
+          <p className="mt-1 text-xs text-gray-500">{lock.reason}</p>
         )}
       </div>
     </StageModalShell>
@@ -281,33 +315,42 @@ export function LoadingSlipModal({
 
 export function GrossModal({
   trip,
-  wo,
+  lock,
+  workOrders,
   onClose,
   onSaved,
 }: {
   trip: TruckOrderRow;
-  wo: WoHeaderData;
+  lock: EditLock;
+  workOrders: WorkOrderOption[];
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const [workOrderId, setWorkOrderId] = useState<string | null>(
+    trip.workOrderId,
+  );
   const [vtNumber, setVtNumber] = useState(trip.vtNumber ?? "");
   const [grossWeight, setGrossWeight] = useState(
     trip.grossWeight !== null ? String(trip.grossWeight) : "",
   );
   const snapshot =
     trip.grossWeight !== null
-      ? JSON.stringify([trip.vtNumber ?? "", String(trip.grossWeight)])
+      ? JSON.stringify([
+          trip.workOrderId ?? "",
+          trip.vtNumber ?? "",
+          String(trip.grossWeight),
+        ])
       : null;
   const completed = trip.status === "COMPLETED";
-  // Once the party records the received weight the trip is closed for good.
-  const locked = trip.netWeightReceived !== null;
+  // Past its 30-minute window (or invoiced) the gross weighment is locked.
+  const locked = !lock.canEdit;
   const [loading, error, run] = useStageSave(
     onSaved,
     completed ? "Trip updated" : "Trip completed",
   );
 
-  const current = JSON.stringify([vtNumber, grossWeight]);
-  const dirty = snapshot !== current;
+  const current = JSON.stringify([workOrderId ?? "", vtNumber, grossWeight]);
+  const dirty = !locked && snapshot !== current;
 
   const gross = Number(grossWeight);
   const net =
@@ -323,18 +366,47 @@ export function GrossModal({
       saveLabel={completed ? "Save" : "Complete Trip"}
       lastUpdatedBy={trip.completedByName}
       lastUpdatedAt={trip.completedAt}
+      firstEnteredByName={trip.grossFirstByName}
+      firstEnteredAt={trip.grossFirstAt}
       onClose={onClose}
       onSubmit={async (e) => {
         e.preventDefault();
         // On success the popup closes via onSaved — nothing to keep in sync.
-        await run(() => recordGross(trip.id, { vtNumber, grossWeight: gross }));
+        await run(() =>
+          recordGross(trip.id, {
+            workOrderId: workOrderId ?? "",
+            vtNumber,
+            grossWeight: gross,
+          }),
+        );
       }}
     >
-      <div className="space-y-1.5 rounded-lg border border-gray-100 bg-gray-50/60 p-4">
-        <InfoRow label="Tare" value={`${formatQty(trip.tareWeight)} MT`} />
-        <InfoRow
-          label="WO remaining balance"
-          value={`${formatQty(wo.balance)} MT`}
+      <div>
+        <label className="mb-1 block text-sm font-medium text-gray-700">
+          Work Order<span className="text-red-500"> *</span>
+        </label>
+        <SearchableSelect
+          options={workOrders}
+          value={workOrderId}
+          onChange={setWorkOrderId}
+          getKey={(w) => w.id}
+          getLabel={(w) => `${formatWoNumber(w.seq)} · ${w.vesselName}`}
+          getSearchText={(w) =>
+            `${formatWoNumber(w.seq)} ${w.vesselName} ${w.cargoTypeName} ${w.supplierName} ${w.partyName}`
+          }
+          renderOption={(w) => (
+            <span className="block">
+              <span className="block text-sm font-semibold text-gray-900">
+                {formatWoNumber(w.seq)} · {w.vesselName}
+              </span>
+              <span className="block text-xs text-gray-500">
+                {w.cargoTypeName} · {w.supplierName} · {w.partyName}
+              </span>
+            </span>
+          )}
+          placeholder="Search by WO#, vessel, cargo, supplier or party..."
+          emptyText="No work order matches your search."
+          disabled={locked}
         />
       </div>
 
@@ -367,18 +439,15 @@ export function GrossModal({
           className={`${inputClass} disabled:bg-gray-50 disabled:text-gray-500`}
           placeholder="e.g. 30.140"
         />
-        {locked ? (
-          <p className="mt-1 text-xs text-gray-500">
-            Net weight received has been recorded — the trip is closed and
-            weights are locked.
-          </p>
-        ) : (
-          net !== null && (
-            <p className="mt-1 text-xs font-medium text-green-700">
-              Net weight: {formatQty(net)} MT
-            </p>
-          )
-        )}
+        {locked
+          ? lock.reason && (
+              <p className="mt-1 text-xs text-gray-500">{lock.reason}</p>
+            )
+          : net !== null && (
+              <p className="mt-1 text-xs font-medium text-green-700">
+                Net weight: {formatQty(net)} MT
+              </p>
+            )}
       </div>
     </StageModalShell>
   );
@@ -388,10 +457,12 @@ export function GrossModal({
 
 export function NetReceivedModal({
   trip,
+  lock,
   onClose,
   onSaved,
 }: {
   trip: TruckOrderRow;
+  lock: EditLock;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -407,8 +478,10 @@ export function NetReceivedModal({
     "Net weight received recorded",
   );
 
+  // Past its 30-minute window (or invoiced) the received weight is locked.
+  const locked = !lock.canEdit;
   const current = JSON.stringify([netWeightReceived]);
-  const dirty = snapshot !== current;
+  const dirty = !locked && snapshot !== current;
 
   return (
     <StageModalShell
@@ -420,6 +493,8 @@ export function NetReceivedModal({
       saveLabel="Save"
       lastUpdatedBy={trip.netReceivedByName}
       lastUpdatedAt={trip.netReceivedAt}
+      firstEnteredByName={trip.netReceivedFirstByName}
+      firstEnteredAt={trip.netReceivedFirstAt}
       onClose={onClose}
       onSubmit={async (e) => {
         e.preventDefault();
@@ -451,9 +526,13 @@ export function NetReceivedModal({
           value={netWeightReceived}
           onChange={(e) => setNetWeightReceived(e.target.value)}
           required
-          className={inputClass}
+          disabled={locked}
+          className={`${inputClass} disabled:bg-gray-50 disabled:text-gray-500`}
           placeholder="e.g. 25.480"
         />
+        {locked && lock.reason && (
+          <p className="mt-1 text-xs text-gray-500">{lock.reason}</p>
+        )}
       </div>
     </StageModalShell>
   );

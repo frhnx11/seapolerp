@@ -3,7 +3,6 @@
 import { Plus, Search, Truck as TruckIcon, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
 
 import { LoadMoreFooter } from "@/components/load-more-footer";
 import { usePagination } from "@/components/use-pagination";
@@ -15,11 +14,8 @@ import {
   wheelsLabel,
 } from "@/features/trucks/truck";
 
-import { setWorkOrderTruckBlocked } from "./allot-actions";
+import { setAllottedTrucks } from "./actions";
 import { AllotTrucksModal } from "./allot-trucks-modal";
-
-/** An allotted truck plus its work-order-specific block flag. */
-type AllottedTruckRow = Truck & { woBlocked: boolean };
 
 const COLUMNS = ["Vehicle No", "Type", "Owner", "Status"];
 
@@ -28,80 +24,24 @@ const selectClass =
 
 const pillBase =
   "inline-flex rounded-full border px-3 py-1 text-xs font-medium";
-const WO_BLOCKED_PILL = "border-red-200 bg-red-50 text-red-700";
 
 /**
- * Status pill. Universal block (from the trucks master) is static here; an
- * active/expired truck is a button to block it for this work order, and a
- * WO-blocked truck is a button to unblock it. Read-only portals show all
- * states without the buttons.
+ * The global allotted-trucks pool. Admin gets an "Allot Trucks" button (the shared
+ * truck-picker modal); the read-only portals just see the list. Status is the
+ * truck's master status (Active / Expired / Blocked) — there's no per-pool block,
+ * since the pool isn't tied to a work order.
  */
-function StatusCell({
-  truck,
-  todayIso,
-  readOnly,
-  onBlock,
-  onUnblock,
-}: {
-  truck: AllottedTruckRow;
-  todayIso: string;
-  readOnly: boolean;
-  onBlock: () => void;
-  onUnblock: () => void;
-}) {
-  const universal = displayStatus(truck, todayIso);
-  if (universal === "BLOCKED") {
-    const pill = TRUCK_STATUS_PILL.BLOCKED;
-    return (
-      <span
-        title="Blocked in the trucks master"
-        className={`${pillBase} ${pill.className}`}
-      >
-        {pill.label}
-      </span>
-    );
-  }
-  if (truck.woBlocked) {
-    return readOnly ? (
-      <span className={`${pillBase} ${WO_BLOCKED_PILL}`}>Blocked (WO)</span>
-    ) : (
-      <button
-        type="button"
-        onClick={onUnblock}
-        title="Unblock for this work order"
-        className={`${pillBase} ${WO_BLOCKED_PILL} transition-colors hover:bg-red-100`}
-      >
-        Blocked (WO)
-      </button>
-    );
-  }
-  const pill = TRUCK_STATUS_PILL[universal];
-  return readOnly ? (
-    <span className={`${pillBase} ${pill.className}`}>{pill.label}</span>
-  ) : (
-    <button
-      type="button"
-      onClick={onBlock}
-      title="Block for this work order"
-      className={`${pillBase} ${pill.className} transition-colors hover:opacity-80`}
-    >
-      {pill.label}
-    </button>
-  );
-}
-
 export function AllottedTrucksClient({
-  workOrderId,
   allottedTrucks,
   allTrucks,
   todayIso,
   readOnly = false,
 }: {
-  workOrderId: string;
-  allottedTrucks: AllottedTruckRow[];
+  allottedTrucks: Truck[];
+  /** The full fleet, for the allot modal. Empty on read-only portals. */
   allTrucks: Truck[];
   todayIso: string;
-  /** View-only portals: no "Allot Trucks" button and no block toggle. */
+  /** View-only portals: no "Allot Trucks" button. */
   readOnly?: boolean;
 }) {
   const router = useRouter();
@@ -109,34 +49,6 @@ export function AllottedTrucksClient({
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [ownerFilter, setOwnerFilter] = useState("ALL");
-  // The truck whose WO-block we're confirming (block=true) or unblocking (false).
-  const [blockTarget, setBlockTarget] = useState<{
-    truck: AllottedTruckRow;
-    block: boolean;
-  } | null>(null);
-  const [blocking, setBlocking] = useState(false);
-
-  async function applyBlock() {
-    if (!blockTarget) return;
-    setBlocking(true);
-    const result = await setWorkOrderTruckBlocked(
-      workOrderId,
-      blockTarget.truck.id,
-      blockTarget.block,
-    );
-    setBlocking(false);
-    if (result.ok) {
-      toast.success(
-        blockTarget.block
-          ? "Truck blocked for this work order"
-          : "Truck unblocked for this work order",
-      );
-      setBlockTarget(null);
-      router.refresh();
-    } else {
-      toast.error(result.error ?? "Failed to update block status");
-    }
-  }
 
   const owners = useMemo(
     () =>
@@ -173,7 +85,7 @@ export function AllottedTrucksClient({
             Allotted Trucks
           </h2>
           <p className="mt-1 text-sm text-gray-500">
-            Only these trucks can deliver this work order&apos;s goods
+            Trucks available to deliver work orders
           </p>
         </div>
         {!readOnly && (
@@ -256,32 +168,30 @@ export function AllottedTrucksClient({
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.length > 0 ? (
-                visible.map((t) => (
-                  <tr key={t.id} className="transition-colors hover:bg-gray-50">
-                    <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                      {t.vehicleNo}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      {wheelsLabel(t.wheels)}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      {t.owner}
-                    </td>
-                    <td className="px-6 py-4">
-                      <StatusCell
-                        truck={t}
-                        todayIso={todayIso}
-                        readOnly={readOnly}
-                        onBlock={() =>
-                          setBlockTarget({ truck: t, block: true })
-                        }
-                        onUnblock={() =>
-                          setBlockTarget({ truck: t, block: false })
-                        }
-                      />
-                    </td>
-                  </tr>
-                ))
+                visible.map((t) => {
+                  const pill = TRUCK_STATUS_PILL[displayStatus(t, todayIso)];
+                  return (
+                    <tr
+                      key={t.id}
+                      className="transition-colors hover:bg-gray-50"
+                    >
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                        {t.vehicleNo}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600">
+                        {wheelsLabel(t.wheels)}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600">
+                        {t.owner}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`${pillBase} ${pill.className}`}>
+                          {pill.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
               ) : (
                 <tr>
                   <td
@@ -299,7 +209,9 @@ export function AllottedTrucksClient({
                     </h3>
                     <p className="text-gray-500">
                       {allottedTrucks.length === 0
-                        ? 'Use "Allot Trucks" to assign trucks to this work order.'
+                        ? readOnly
+                          ? "No trucks have been allotted yet."
+                          : 'Use "Allot Trucks" to add trucks to the pool.'
                         : "Try a different search or filter."}
                     </p>
                   </td>
@@ -320,73 +232,16 @@ export function AllottedTrucksClient({
 
       {!readOnly && showAllot && (
         <AllotTrucksModal
-          workOrderId={workOrderId}
           trucks={allTrucks}
           initialSelectedIds={allottedTrucks.map((t) => t.id)}
           todayIso={todayIso}
+          onSave={(ids) => setAllottedTrucks(ids)}
           onClose={() => setShowAllot(false)}
           onSaved={() => {
             setShowAllot(false);
             router.refresh();
           }}
         />
-      )}
-
-      {blockTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <h2 className="text-xl font-bold text-gray-900">
-              {blockTarget.block
-                ? "Block truck for this work order"
-                : "Unblock truck for this work order"}
-            </h2>
-            <p className="mt-2 text-sm text-gray-600">
-              {blockTarget.block ? (
-                <>
-                  Block{" "}
-                  <span className="font-semibold text-gray-900">
-                    {blockTarget.truck.vehicleNo}
-                  </span>{" "}
-                  for this work order? It won&apos;t be available for new truck
-                  orders here. Existing trips are unaffected, and it stays
-                  available to other work orders.
-                </>
-              ) : (
-                <>
-                  Allow{" "}
-                  <span className="font-semibold text-gray-900">
-                    {blockTarget.truck.vehicleNo}
-                  </span>{" "}
-                  to start new truck orders under this work order again?
-                </>
-              )}
-            </p>
-            <div className="mt-6 flex gap-3">
-              <button
-                onClick={() => setBlockTarget(null)}
-                disabled={blocking}
-                className="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={applyBlock}
-                disabled={blocking}
-                className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-colors disabled:opacity-50 ${
-                  blockTarget.block
-                    ? "bg-red-600 hover:bg-red-700"
-                    : "bg-[#0483ca] hover:bg-[#0372b0]"
-                }`}
-              >
-                {blocking
-                  ? "Saving..."
-                  : blockTarget.block
-                    ? "Block"
-                    : "Unblock"}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );

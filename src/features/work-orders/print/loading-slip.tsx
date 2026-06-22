@@ -47,10 +47,7 @@ export function LoadingSlip({ data }: { data: TruckOrderPrintData }) {
 
       <div className="mt-4 space-y-1">
         <DocRow label="Date" value={docDateTime(data.loadingSlipAt)} />
-        <DocRow label="Vessel Name" value={data.vesselName} />
         <DocRow label="Vehicle No." value={data.vehicleNo} strong />
-        <DocRow label="CARGO" value={data.cargoTypeName} />
-        <DocRow label="Place" value={data.partyName} />
         <DocRow
           label="Loading Site"
           value={data.loadingSiteName ?? "—"}

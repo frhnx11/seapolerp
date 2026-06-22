@@ -36,7 +36,7 @@ export async function wipeAllData(): Promise<void> {
     );
     // Clear all domain + master tables and reset their identity sequences.
     await tx.$executeRawUnsafe(
-      `TRUNCATE TABLE "vessels","work_orders","truck_orders","invoices","work_order_trucks","notifications","trucks","truck_owners","cargo_types","parties","suppliers","loading_sites" RESTART IDENTITY CASCADE`,
+      `TRUNCATE TABLE "vessels","work_orders","truck_orders","invoices","allotted_trucks","notifications","trucks","truck_owners","cargo_types","parties","suppliers","loading_sites" RESTART IDENTITY CASCADE`,
     );
     // Transient email-verification tokens.
     await tx.$executeRawUnsafe(`DELETE FROM "verification"`);

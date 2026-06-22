@@ -40,8 +40,8 @@ model Truck {
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
-  owner       TruckOwner       @relation(fields: [ownerId], references: [id], onDelete: Restrict)
-  allotments  WorkOrderTruck[]
+  owner       TruckOwner    @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  allotment   AllottedTruck?
   truckOrders TruckOrder[]
 
   @@index([ownerId])
@@ -153,9 +153,8 @@ model WorkOrder {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  allottedTrucks WorkOrderTruck[]
-  truckOrders    TruckOrder[]
-  invoices       Invoice[]
+  truckOrders TruckOrder[]
+  invoices    Invoice[]
 
   @@index([vesselId])
   @@index([supplierId])
@@ -170,13 +169,15 @@ model WorkOrder {
 /// (order COMPLETED) tare and gross are locked because the net has been added to
 /// the work order's delivered quantity.
 model TruckOrder {
-  id          String    @id @default(cuid())
-  seq         Int       @unique @default(autoincrement())
-  workOrderId String    @map("work_order_id")
-  truckId     String    @map("truck_id")
-  status      String    @default("TARE_RECORDED") // TARE_RECORDED | LOADING_SLIP_ISSUED | COMPLETED
-  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Restrict)
-  truck       Truck     @relation(fields: [truckId], references: [id], onDelete: Restrict)
+  id          String     @id @default(cuid())
+  seq         Int        @unique @default(autoincrement())
+  // Null until the gross stage: a trip is created (tare) before the work order
+  // is known, and is mapped to one when the gross weight is recorded.
+  workOrderId String?    @map("work_order_id")
+  truckId     String     @map("truck_id")
+  status      String     @default("TARE_RECORDED") // TARE_RECORDED | LOADING_SLIP_ISSUED | COMPLETED
+  workOrder   WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: Restrict)
+  truck       Truck      @relation(fields: [truckId], references: [id], onDelete: Restrict)
 
   // Stage 1 — weighbridge in (creates the trip)
   tareWeight        Decimal  @map("tare_weight") @db.Decimal(12, 3)
@@ -200,6 +201,19 @@ model TruckOrder {
   netWeightReceived Decimal?  @map("net_weight_received") @db.Decimal(12, 3)
   netReceivedByName String?   @map("net_received_by_name")
   netReceivedAt     DateTime? @map("net_received_at")
+
+  // Immutable first-entry stamps for the 30-minute editing window: who first
+  // recorded each value and when. Set once and never overwritten on edits, so
+  // the window measures from first entry while the *By/*At stamps above keep
+  // tracking the latest editor. Tare's first-entry time is `createdAt` (it's
+  // entered at creation), so only its name needs a column here.
+  tareFirstByName        String?   @map("tare_first_by_name")
+  loadingSlipFirstByName String?   @map("loading_slip_first_by_name")
+  loadingSlipFirstAt     DateTime? @map("loading_slip_first_at")
+  grossFirstByName       String?   @map("gross_first_by_name")
+  grossFirstAt           DateTime? @map("gross_first_at")
+  netReceivedFirstByName String?   @map("net_received_first_by_name")
+  netReceivedFirstAt     DateTime? @map("net_received_first_at")
 
   // Invoicing — a trip lives on at most one invoice; deleting the invoice
   // frees the trip. While set, the received weight is locked (no drift).
@@ -237,6 +251,8 @@ model Invoice {
   discountPct Decimal @default(0) @map("discount_pct") @db.Decimal(5, 2)
   finalAmount Decimal @map("final_amount") @db.Decimal(14, 2) // amount − discount
 
+  remarks String? // optional free text (e.g. the discount reason), shown on the invoice
+
   createdByName String   @map("created_by_name")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
@@ -265,24 +281,20 @@ model Notification {
   @@map("notifications")
 }
 
-/// Trucks allotted to a work order — only these trucks may deliver its goods.
-/// Explicit join table so future per-truck delivery data can hang off it. A truck
-/// can be allotted to many work orders at once.
-model WorkOrderTruck {
-  id          String    @id @default(cuid())
-  workOrderId String    @map("work_order_id")
-  truckId     String    @map("truck_id")
-  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
-  truck       Truck     @relation(fields: [truckId], references: [id], onDelete: Restrict)
-  /// Work-order-specific block: when true, this truck can't start NEW trips
-  /// under this work order (existing trips are unaffected). Separate from the
-  /// universal Truck.status = BLOCKED.
-  blocked     Boolean   @default(false)
-  createdAt   DateTime  @default(now()) @map("created_at")
+/// Global pool of trucks available to deliver work orders. Allotment is no longer
+/// tied to a single work order: a truck in this pool can be used by any work order
+/// any number of times. Managed by Admin from the "Allotted Trucks" page; the other
+/// portals (Port WB, Party WB, Accountant) see it read-only.
+model AllottedTruck {
+  id             String   @id @default(cuid())
+  truckId        String   @unique @map("truck_id")
+  truck          Truck    @relation(fields: [truckId], references: [id], onDelete: Cascade)
+  /// Name snapshot of the admin who last allotted this truck.
+  allottedByName String?  @map("allotted_by_name")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
-  @@unique([workOrderId, truckId])
-  @@index([truckId])
-  @@map("work_order_trucks")
+  @@map("allotted_trucks")
 }
 
 model User {

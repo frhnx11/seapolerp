@@ -18,6 +18,7 @@ import {
   formatInvoiceNo,
   type InvoiceListRow,
   lowestNet,
+  netWeightDiff,
   totalLowestNet,
 } from "./invoice-lib";
 
@@ -84,6 +85,7 @@ export function InvoiceWizardModal({
   const [discountPct, setDiscountPct] = useState(
     invoice && invoice.discountPct > 0 ? String(invoice.discountPct) : "",
   );
+  const [remarks, setRemarks] = useState(invoice?.remarks ?? "");
   const [search, setSearch] = useState("");
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -151,8 +153,12 @@ export function InvoiceWizardModal({
     ? date !== invoice.date ||
       truckOwner !== invoice.truckOwner ||
       !sameSet(selected, initialSelected) ||
-      pct !== invoice.discountPct
-    : truckOwner !== "" || selected.size > 0 || discountPct.trim() !== "";
+      pct !== invoice.discountPct ||
+      remarks.trim() !== (invoice.remarks ?? "")
+    : truckOwner !== "" ||
+      selected.size > 0 ||
+      discountPct.trim() !== "" ||
+      remarks.trim() !== "";
 
   const step1Valid =
     Boolean(date) && truckOwner !== "" && selected.size > 0 && rate !== null;
@@ -185,6 +191,7 @@ export function InvoiceWizardModal({
       truckOwner,
       tripIds: [...selected],
       discountPct: pct,
+      remarks: remarks.trim(),
     };
     const result = isEdit
       ? await updateInvoice(invoice.id, input)
@@ -484,6 +491,27 @@ export function InvoiceWizardModal({
                   <span>{formatInr(totals.finalAmount)}</span>
                 </div>
               </div>
+
+              <div>
+                <label
+                  htmlFor="inv-remarks"
+                  className="mb-1 block text-sm font-medium text-gray-700"
+                >
+                  Remarks (optional)
+                </label>
+                <textarea
+                  id="inv-remarks"
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  rows={3}
+                  maxLength={500}
+                  placeholder="e.g. reason for the discount"
+                  className={`${inputClass} w-full resize-none`}
+                />
+                <p className="mt-1 text-xs text-gray-400">
+                  Shown on the printed invoice.
+                </p>
+              </div>
             </div>
           </div>
         )}
@@ -501,6 +529,7 @@ export function InvoiceWizardModal({
                   truckOwner,
                   rate,
                   discountPct: pctValid ? pct : 0,
+                  remarks: remarks.trim() || null,
                   workOrder: {
                     woNumber: formatWoNumber(wo.seq),
                     vesselName: wo.vesselName,
@@ -513,6 +542,7 @@ export function InvoiceWizardModal({
                     vtNumber: t.vtNumber,
                     vehicleNo: t.vehicleNo,
                     qty: lowestNet(t),
+                    diff: netWeightDiff(t),
                   })),
                 }}
               />

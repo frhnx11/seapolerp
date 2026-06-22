@@ -29,6 +29,14 @@ export function lowestNet(t: {
   return Math.min(t.netWeight, t.netWeightReceived);
 }
 
+/** The absolute gap between net sent and net received for one trip, in MT. */
+export function netWeightDiff(t: {
+  netWeight: number;
+  netWeightReceived: number;
+}): number {
+  return Math.abs(t.netWeight - t.netWeightReceived);
+}
+
 /** Σ lowest nets for a set of trips, in MT (3 dp). */
 export function totalLowestNet(
   trips: { netWeight: number; netWeightReceived: number }[],
@@ -63,6 +71,7 @@ export const invoiceInputSchema = z.object({
     .min(0, "Discount can't be negative")
     .max(100, "Discount can't exceed 100%")
     .default(0),
+  remarks: z.string().trim().max(500, "Remarks are too long").optional(),
 });
 export type InvoiceInput = z.infer<typeof invoiceInputSchema>;
 
@@ -77,5 +86,6 @@ export type InvoiceListRow = {
   amount: number;
   discountPct: number;
   finalAmount: number;
+  remarks: string | null;
   tripIds: string[];
 };

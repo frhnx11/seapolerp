@@ -14,6 +14,52 @@ export function truckOrderStatusIndex(status: string): number {
   return i === -1 ? 0 : i;
 }
 
+// ---- Edit window ----
+
+/**
+ * Each recorded value (tare, loading site, gross, net received) is editable for
+ * this long after its *first* entry. After that only an admin can change it, and
+ * only until the trip is invoiced.
+ */
+export const EDIT_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+
+export type EditLock = { canEdit: boolean; reason: string | null };
+
+/**
+ * The single rule governing whether a value may be edited, shared by the server
+ * actions (authoritative) and the popups (mirrors it for the UI).
+ *
+ * - `firstEnteredAt` is the immutable first-entry anchor; `null` means the value
+ *   hasn't been entered yet, so this is a first entry — always allowed.
+ * - Invoiced trips are locked for everyone (the weight is billed).
+ * - Admins have no time limit (until invoiced); everyone else gets `EDIT_WINDOW_MS`.
+ */
+export function evaluateEditLock(p: {
+  firstEnteredAt: string | Date | null;
+  isAdmin: boolean;
+  invoiced: boolean;
+  now: number;
+}): EditLock {
+  if (p.invoiced) {
+    return {
+      canEdit: false,
+      reason: "This trip is on an invoice — edit or delete that invoice first.",
+    };
+  }
+  if (p.isAdmin) return { canEdit: true, reason: null };
+  if (p.firstEnteredAt == null) return { canEdit: true, reason: null };
+  const at =
+    typeof p.firstEnteredAt === "string"
+      ? Date.parse(p.firstEnteredAt)
+      : p.firstEnteredAt.getTime();
+  if (p.now <= at + EDIT_WINDOW_MS) return { canEdit: true, reason: null };
+  return {
+    canEdit: false,
+    reason:
+      "The 30-minute editing window has closed — ask an admin to make changes.",
+  };
+}
+
 /** Truck order number, e.g. 1 -> "TO-#001". */
 export function formatTruckOrderNo(seq: number): string {
   return `TO-#${String(seq).padStart(3, "0")}`;
@@ -66,8 +112,23 @@ export function formatStamp(iso: string): string {
   return `${String(d.getDate()).padStart(2, "0")} ${MONTHS[d.getMonth()]} ${hh}:${mm}`;
 }
 
-/** A truck available for a new trip (allotted to the WO, not blocked). */
+/** A truck available for a new trip (in the global allotted pool, not blocked). */
 export type TruckOption = { id: string; vehicleNo: string };
+
+/**
+ * A work order offered in the gross-stage selector. Carries the quantities so the
+ * picker can show the remaining balance; `balance = doQuantity - delivered`.
+ */
+export type WorkOrderOption = {
+  id: string;
+  seq: number;
+  vesselName: string;
+  cargoTypeName: string;
+  supplierName: string;
+  partyName: string;
+  doQuantity: number;
+  delivered: number;
+};
 
 export type TruckOrderRow = {
   id: string;
@@ -77,25 +138,37 @@ export type TruckOrderRow = {
   vehicleNo: string;
   wheels: number;
   owner: string;
+  // Tare's edit-window anchor — the trip is created at tare entry (immutable).
+  createdAt: string; // ISO
+  // Work order — null until the gross stage maps the trip to one.
+  workOrderId: string | null;
+  workOrderSeq: number | null;
   // Stage 1
   tareWeight: number;
   tareByName: string;
   tareAt: string; // ISO
+  tareFirstByName: string | null; // immutable: who first entered tare
   // Stage 2
   loadingSiteId: string | null;
   loadingSiteName: string | null;
   loadingSlipByName: string | null;
   loadingSlipAt: string | null;
+  loadingSlipFirstByName: string | null; // immutable: who first entered it
+  loadingSlipFirstAt: string | null; // immutable edit-window anchor
   // Stage 3
   vtNumber: string | null;
   grossWeight: number | null;
   netWeight: number | null;
   completedByName: string | null;
   completedAt: string | null;
+  grossFirstByName: string | null; // immutable: who first entered gross
+  grossFirstAt: string | null; // immutable edit-window anchor
   // Party weighbridge — net weight received at the destination
   netWeightReceived: number | null;
   netReceivedByName: string | null;
   netReceivedAt: string | null;
+  netReceivedFirstByName: string | null; // immutable: who first entered it
+  netReceivedFirstAt: string | null; // immutable edit-window anchor
   // Invoicing — set once the trip is billed (null = not on any invoice).
   invoiceId: string | null;
   invoiceSeq: number | null; // the invoice's display number, when billed
@@ -127,6 +200,7 @@ export const loadingSlipSchema = z.object({
 export type LoadingSlipInput = z.infer<typeof loadingSlipSchema>;
 
 export const grossSchema = z.object({
+  workOrderId: z.string().trim().min(1, "Work order is required"),
   vtNumber: z
     .string()
     .trim()

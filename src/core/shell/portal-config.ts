@@ -11,6 +11,7 @@ export type NavKey =
   | "masterData"
   | "workOrders"
   | "truckOrders"
+  | "allottedTrucks"
   | "invoices"
   | "alerts"
   | "vessels";
@@ -56,8 +57,13 @@ function basicNav(home: string): NavItemConfig[] {
 const ADMIN_NAV: NavItemConfig[] = [
   { name: "Dashboard", href: "/admin", icon: "dashboard" },
   { name: "Vessels", href: "/admin/vessels", icon: "vessels" },
-  { name: "Work Orders", href: "/admin/work-orders", icon: "workOrders" },
+  {
+    name: "Allotted Trucks",
+    href: "/admin/allotted-trucks",
+    icon: "allottedTrucks",
+  },
   { name: "Truck Orders", href: "/admin/truck-orders", icon: "truckOrders" },
+  { name: "Work Orders", href: "/admin/work-orders", icon: "workOrders" },
   { name: "Invoices", href: "/admin/invoices", icon: "invoices" },
   { name: "Alerts", href: "/admin/alerts", icon: "alerts" },
   { name: "Master Data", href: "/admin/master-data", icon: "masterData" },
@@ -66,6 +72,16 @@ const ADMIN_NAV: NavItemConfig[] = [
 
 const PORT_WB_NAV: NavItemConfig[] = [
   { name: "Dashboard", href: "/port-weighbridge", icon: "dashboard" },
+  {
+    name: "Allotted Trucks",
+    href: "/port-weighbridge/allotted-trucks",
+    icon: "allottedTrucks",
+  },
+  {
+    name: "Truck Orders",
+    href: "/port-weighbridge/truck-orders",
+    icon: "truckOrders",
+  },
   {
     name: "Work Orders",
     href: "/port-weighbridge/work-orders",
@@ -77,6 +93,16 @@ const PORT_WB_NAV: NavItemConfig[] = [
 const PARTY_WB_NAV: NavItemConfig[] = [
   { name: "Dashboard", href: "/party-weighbridge", icon: "dashboard" },
   {
+    name: "Allotted Trucks",
+    href: "/party-weighbridge/allotted-trucks",
+    icon: "allottedTrucks",
+  },
+  {
+    name: "Truck Orders",
+    href: "/party-weighbridge/truck-orders",
+    icon: "truckOrders",
+  },
+  {
     name: "Work Orders",
     href: "/party-weighbridge/work-orders",
     icon: "workOrders",
@@ -86,6 +112,16 @@ const PARTY_WB_NAV: NavItemConfig[] = [
 
 const ACCOUNTANT_NAV: NavItemConfig[] = [
   { name: "Dashboard", href: "/accountant", icon: "dashboard" },
+  {
+    name: "Allotted Trucks",
+    href: "/accountant/allotted-trucks",
+    icon: "allottedTrucks",
+  },
+  {
+    name: "Truck Orders",
+    href: "/accountant/truck-orders",
+    icon: "truckOrders",
+  },
   {
     name: "Work Orders",
     href: "/accountant/work-orders",
