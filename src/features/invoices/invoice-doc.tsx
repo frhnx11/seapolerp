@@ -1,9 +1,17 @@
 import Image from "next/image";
 
-import { formatInr, formatQty } from "@/core/format";
-import { formatDate } from "@/features/work-orders/work-order";
+import { computeInvoiceTotals, fmtDotDate, fmtMonDayYear } from "./invoice-lib";
 
-import { computeInvoiceTotals } from "./invoice-lib";
+/** Fixed line-item description on every payment bill. */
+const LINE_DESCRIPTION = "Trip charges (Min Weight) - Wharf/Plot to";
+
+/** Grouped number to a fixed number of decimals, e.g. num(346522.8, 2) -> "346,522.80". */
+function num(n: number, dp: number): string {
+  return n.toLocaleString("en-US", {
+    minimumFractionDigits: dp,
+    maximumFractionDigits: dp,
+  });
+}
 
 /**
  * Everything the invoice document renders. Pure data in, markup out — shared
@@ -11,181 +19,166 @@ import { computeInvoiceTotals } from "./invoice-lib";
  */
 export type InvoiceDocData = {
   invoiceNo: string; // "INV-#012", or a placeholder before the first save
-  date: string; // "YYYY-MM-DD"
-  truckOwner: string;
-  rate: number; // ₹/MT
+  date: string; // invoice date, "YYYY-MM-DD"
+  vesselName: string;
+  /** The billed party — shown as "Issued To" and inside the title. */
+  discountPartyName: string;
+  vendorInvoiceNumber: string;
+  vendorInvoiceDate: string; // "YYYY-MM-DD"
+  rate: number; // ₹/MT, frozen at creation
+  totalQty: number; // Σ lowest net weights (MT)
   discountPct: number;
   remarks?: string | null; // optional free text (e.g. the discount reason)
-  workOrder: {
-    woNumber: string;
-    vesselName: string;
-    supplierName: string;
-    partyName: string;
-    cargoTypeName: string;
-  };
-  /** One row per trip; qty = lowest net weight, diff = |net sent − received| (MT). */
-  trips: {
-    id: string;
-    vtNumber: string | null;
-    vehicleNo: string;
-    qty: number;
-    diff: number;
-  }[];
 };
 
-function InfoCell({ label, value }: { label: string; value: string }) {
+/** One right-aligned "label : value" pair in the header block. */
+function HeadField({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <p className="text-[11px] font-semibold tracking-wide text-gray-500 uppercase">
-        {label}
-      </p>
-      <p className="text-sm font-semibold text-gray-900">{value}</p>
-    </div>
+    <>
+      <span className="text-right text-gray-500">{label} :</span>
+      <span className="font-semibold text-gray-900">{value}</span>
+    </>
   );
 }
 
-/** The transport invoice document (preview + print). */
+/** The payment bill document (wizard preview + print). */
 export function InvoiceDocView({ data }: { data: InvoiceDocData }) {
-  const totalQty = data.trips.reduce((sum, t) => sum + t.qty, 0);
   const { amount, discount, finalAmount } = computeInvoiceTotals(
-    totalQty,
+    data.totalQty,
     data.rate,
     data.discountPct,
   );
 
+  const cell = "border border-gray-400 px-3 py-2";
+
   return (
     <div className="w-[780px] border border-gray-400 bg-white p-8 font-sans text-sm text-black shadow-lg print:border-gray-600 print:shadow-none">
       {/* Letterhead */}
-      <div className="flex items-start gap-3 border-b-2 border-gray-700 pb-3">
+      <div className="flex items-center gap-4 border-b-2 border-gray-800 pb-3">
         <Image
           src="/seapollogo.png"
           alt="Seapol"
-          width={96}
-          height={72}
-          className="h-12 w-auto object-contain"
+          width={120}
+          height={90}
+          className="h-14 w-auto object-contain"
         />
-        <div className="flex-1 text-center">
-          <h1 className="text-lg font-extrabold">
-            Seaport Logistics Pvt. Ltd.
+        <div>
+          <h1 className="text-xl font-extrabold tracking-tight">
+            Seaport Logistics Pvt Ltd (TTN)
           </h1>
           <p className="text-xs font-medium">
-            B-32, World Trade Avenue, Harbour Estate,
+            B 32 World Trade Avenue, Harbour Estate,
           </p>
-          <p className="text-xs font-medium">
-            TUTICORIN - 628 004, Tel: 4200544
-          </p>
+          <p className="text-xs font-medium">Tuticorin - 628004, India</p>
         </div>
       </div>
 
-      {/* Title + number/date */}
-      <div className="mt-4 flex items-center justify-between">
-        <span className="border-2 border-gray-700 px-3 py-1 text-sm font-bold tracking-wide">
-          TRANSPORT INVOICE
+      {/* Payment Bill + Issued To (left) · dated fields (right) */}
+      <div className="mt-5 flex items-start justify-between gap-6">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Payment Bill</h2>
+          <div className="mt-4">
+            <p className="text-[11px] font-semibold tracking-wide text-gray-500 uppercase">
+              Issued To
+            </p>
+            <p className="text-base font-bold text-gray-900">
+              {data.discountPartyName}
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-[auto_auto] gap-x-3 gap-y-1 text-sm">
+          <HeadField label="Date" value={fmtMonDayYear(data.date)} />
+          <HeadField label="No." value={data.invoiceNo} />
+          <HeadField label="Vendor Inv #" value={data.vendorInvoiceNumber} />
+          <HeadField
+            label="Vendor Inv Date"
+            value={fmtMonDayYear(data.vendorInvoiceDate)}
+          />
+        </div>
+      </div>
+
+      {/* Title */}
+      <div className="mt-4 border-t border-gray-200 pt-3 text-sm">
+        <span className="font-semibold text-gray-500">Title : </span>
+        <span className="font-semibold text-gray-900">
+          {data.vesselName}/{data.discountPartyName}/{data.vendorInvoiceNumber}/
+          {fmtDotDate(data.vendorInvoiceDate)}
         </span>
-        <div className="text-right">
-          <p className="text-sm">
-            <span className="font-semibold">No. </span>
-            <span className="text-base font-bold">{data.invoiceNo}</span>
-          </p>
-          <p className="text-sm">
-            <span className="font-semibold">Date: </span>
-            {formatDate(data.date)}
-          </p>
-        </div>
       </div>
 
-      {/* Work order + parties */}
-      <div className="mt-4 grid grid-cols-3 gap-x-6 gap-y-3 rounded border border-gray-300 p-4">
-        <InfoCell label="To (Truck Owner)" value={data.truckOwner} />
-        <InfoCell label="Work Order" value={data.workOrder.woNumber} />
-        <InfoCell label="Vessel" value={data.workOrder.vesselName} />
-        <InfoCell label="Supplier" value={data.workOrder.supplierName} />
-        <InfoCell label="Party" value={data.workOrder.partyName} />
-        <InfoCell label="Cargo" value={data.workOrder.cargoTypeName} />
-      </div>
-
-      {/* Trip rows */}
-      <table className="mt-4 w-full border-collapse">
+      {/* Line items */}
+      <table className="mt-4 w-full border-collapse text-sm">
         <thead>
-          <tr className="border-y-2 border-gray-700 text-left text-xs font-bold tracking-wide uppercase">
-            <th className="py-2 pr-2 text-right">Sl.</th>
-            <th className="px-3 py-2">VT #</th>
-            <th className="px-3 py-2">Vehicle No</th>
-            <th className="px-3 py-2 text-right">Lowest Net Wt (MT)</th>
-            <th className="px-3 py-2 text-right">Net Wt Diff (MT)</th>
-            <th className="px-3 py-2 text-right">Rate (₹/MT)</th>
-            <th className="py-2 pl-3 text-right">Amount</th>
+          <tr className="text-xs font-bold tracking-wide text-gray-700 uppercase">
+            <th className={`${cell} text-left`}>Description</th>
+            <th className={`${cell} text-right`}>Qty</th>
+            <th className={`${cell} text-center`}>Rate per</th>
+            <th className={`${cell} text-right`}>Rate</th>
+            <th className={`${cell} text-right`}>Amount</th>
           </tr>
         </thead>
         <tbody>
-          {data.trips.map((t, i) => (
-            <tr key={t.id} className="border-b border-gray-200">
-              <td className="py-1.5 pr-2 text-right text-xs text-gray-500">
-                {i + 1}.
-              </td>
-              <td className="px-3 py-1.5 font-medium">{t.vtNumber ?? "—"}</td>
-              <td className="px-3 py-1.5">{t.vehicleNo}</td>
-              <td className="px-3 py-1.5 text-right">{formatQty(t.qty)}</td>
-              <td className="px-3 py-1.5 text-right">{formatQty(t.diff)}</td>
-              <td className="px-3 py-1.5 text-right">{formatQty(data.rate)}</td>
-              <td className="py-1.5 pl-3 text-right font-medium">
-                {formatInr(t.qty * data.rate)}
-              </td>
-            </tr>
-          ))}
+          <tr>
+            <td className={cell}>{LINE_DESCRIPTION}</td>
+            <td className={`${cell} text-right`}>{num(data.totalQty, 3)}</td>
+            <td className={`${cell} text-center`}>MT</td>
+            <td className={`${cell} text-right`}>{num(data.rate, 2)}</td>
+            <td className={`${cell} text-right`}>{num(amount, 2)}</td>
+          </tr>
+          <tr>
+            <td className={cell} />
+            <td className={`${cell} text-right`}>{num(data.totalQty, 3)}</td>
+            <td className={`${cell} text-center`}>MT</td>
+            <td className={`${cell} text-right font-semibold`}>SubTotal</td>
+            <td className={`${cell} text-right font-semibold`}>
+              {num(amount, 2)}
+            </td>
+          </tr>
+          <tr>
+            <td className={cell} />
+            <td className={cell} />
+            <td className={cell} />
+            <td className={`${cell} text-right`}>
+              Discount {num(data.discountPct, 2)} %
+            </td>
+            <td className={`${cell} text-right`}>{num(discount, 2)}</td>
+          </tr>
+          <tr>
+            <td className={cell} />
+            <td className={cell} />
+            <td className={cell} />
+            <td className={`${cell} text-right font-bold`}>Total</td>
+            <td className={`${cell} text-right font-bold`}>
+              {num(finalAmount, 2)}
+            </td>
+          </tr>
         </tbody>
       </table>
 
-      {/* Totals */}
-      <div className="mt-4 flex justify-end">
-        <div className="w-80 space-y-1.5">
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">
-              Total Net Weight ({data.trips.length} trip
-              {data.trips.length === 1 ? "" : "s"})
-            </span>
-            <span className="font-semibold">{formatQty(totalQty)} MT</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Amount</span>
-            <span className="font-semibold">{formatInr(amount)}</span>
-          </div>
-          {data.discountPct > 0 && (
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">
-                Discount ({formatQty(data.discountPct)}%)
-              </span>
-              <span className="font-semibold">− {formatInr(discount)}</span>
-            </div>
-          )}
-          <div className="flex justify-between border-t-2 border-gray-700 pt-1.5 text-base font-bold">
-            <span>Final Amount</span>
-            <span>{formatInr(finalAmount)}</span>
-          </div>
+      {/* Footer: remarks (left) + signatory (right) */}
+      <div className="mt-10 flex items-start justify-between gap-6">
+        <div className="max-w-xs">
+          <p className="text-[11px] font-semibold tracking-wide text-gray-500 uppercase">
+            Remarks
+          </p>
+          <p className="mt-1 text-sm whitespace-pre-wrap text-gray-700">
+            {data.remarks?.trim() || "None"}
+          </p>
         </div>
-      </div>
-
-      {/* Remarks */}
-      {data.remarks && (
-        <div className="mt-6 text-sm">
-          <span className="font-semibold text-gray-700">Remarks: </span>
-          <span className="whitespace-pre-wrap text-gray-600">
-            {data.remarks}
-          </span>
-        </div>
-      )}
-
-      {/* Signature */}
-      <div className="mt-12 flex justify-end">
         <div className="text-center">
-          <div className="h-10" />
-          <p className="border-t border-gray-500 px-6 pt-1 text-xs font-semibold">
-            For Seaport Logistics Pvt. Ltd.
-            <br />
-            Authorized Signatory
+          <p className="text-sm font-bold text-gray-900">
+            For SEAPORT LOGISTICS PVT LTD
+          </p>
+          <div className="h-12" />
+          <p className="border-t border-gray-400 px-8 pt-1 text-sm font-semibold text-gray-700">
+            Manager
           </p>
         </div>
       </div>
+
+      <p className="mt-10 text-center text-sm font-medium tracking-wide text-gray-500 italic">
+        THANK YOU FOR YOUR SERVICE.
+      </p>
     </div>
   );
 }

@@ -221,7 +221,13 @@ export async function updateTare(tripId: string, input: EditTareInput) {
       async (tx) => {
         const trip = await tx.truckOrder.findUnique({
           where: { id: tripId },
-          select: { workOrderId: true, createdAt: true, invoiceId: true },
+          select: {
+            workOrderId: true,
+            createdAt: true,
+            invoiceId: true,
+            grossWeight: true,
+            netWeight: true,
+          },
         });
         if (!trip) throw new Error("Truck order not found");
         const lock = evaluateEditLock({
@@ -233,12 +239,53 @@ export async function updateTare(tripId: string, input: EditTareInput) {
         if (!lock.canEdit) throw new Error(lock.reason ?? "Editing is locked.");
         workOrderId = trip.workOrderId;
 
+        // Once gross is recorded the tare feeds net = gross − tare, which drives
+        // WorkOrder.delivered — so a tare correction must recompute both (mirrors
+        // recordGross). Before completion there's no gross yet, so only the tare
+        // is stored.
+        const gross = trip.grossWeight?.toNumber() ?? null;
+        let newNet: number | null = null;
+        if (gross !== null) {
+          // Gross is only ever set together with the chosen work order, so a
+          // completed trip always has one.
+          const woId = trip.workOrderId;
+          if (woId === null)
+            throw new Error("Completed trip has no work order.");
+          if (tareWeight >= gross) {
+            throw new Error(
+              `Tare weight must be less than the gross (${formatQty(gross)} MT).`,
+            );
+          }
+          newNet = gross - tareWeight;
+          const oldNet = trip.netWeight?.toNumber() ?? 0;
+          const wo = await tx.workOrder.findUnique({
+            where: { id: woId },
+            select: { woQuantity: true, delivered: true },
+          });
+          if (!wo) throw new Error("Work order not found");
+          // The trip's own previous net frees up first on a same-WO recompute.
+          const headroom =
+            wo.woQuantity.toNumber() - wo.delivered.toNumber() + oldNet;
+          if (newNet > headroom) {
+            throw new Error(
+              `Net weight (${formatQty(newNet)} MT) exceeds the work order's remaining balance (${formatQty(headroom)} MT).`,
+            );
+          }
+          if (newNet !== oldNet) {
+            await tx.workOrder.update({
+              where: { id: woId },
+              data: { delivered: { increment: newNet - oldNet } },
+            });
+          }
+        }
+
         await tx.truckOrder.update({
           where: { id: tripId },
           data: {
             tareWeight,
             tareByName: session.user.name,
             tareAt: new Date(),
+            ...(newNet !== null ? { netWeight: newNet } : {}),
           },
         });
       },
@@ -377,14 +424,14 @@ export async function recordGross(tripId: string, input: GrossInput) {
 
         const target = await tx.workOrder.findUnique({
           where: { id: workOrderId },
-          select: { doQuantity: true, delivered: true },
+          select: { woQuantity: true, delivered: true },
         });
         if (!target) throw new Error("Work order not found");
 
         // On a same-WO edit the trip's own previous net frees up first; on a
         // (re)assignment the full net must fit the target's remaining balance.
         const headroom =
-          target.doQuantity.toNumber() -
+          target.woQuantity.toNumber() -
           target.delivered.toNumber() +
           (sameWorkOrder ? oldNet : 0);
         if (net > headroom) {
@@ -445,6 +492,48 @@ export async function recordGross(tripId: string, input: GrossInput) {
       revalidatePath(`/admin/work-orders/${id}`);
       revalidatePath(`/port-weighbridge/work-orders/${id}`);
     }
+
+    // Net sent just changed — if a received weight already exists the >0.3 MT
+    // discrepancy may have flipped, so re-sync the alert (best-effort).
+    try {
+      const t = await prisma.truckOrder.findUnique({
+        where: { id: tripId },
+        select: {
+          netWeight: true,
+          netWeightReceived: true,
+          workOrder: { select: { seq: true } },
+          truck: { select: { vehicleNo: true } },
+        },
+      });
+      if (t && t.netWeightReceived !== null) {
+        const netSent = t.netWeight?.toNumber() ?? null;
+        const netRecv = t.netWeightReceived.toNumber();
+        if (t.workOrder && isNetDiscrepancy(netSent, netRecv)) {
+          const admins = await prisma.user.findMany({
+            where: { role: "ADMIN" },
+            select: { id: true },
+          });
+          if (admins.length > 0) {
+            await prisma.notification.createMany({
+              data: admins.map((a) => ({
+                userId: a.id,
+                truckOrderId: tripId,
+                workOrderSeq: t.workOrder!.seq,
+                vehicleNo: t.truck.vehicleNo,
+              })),
+              skipDuplicates: true,
+            });
+          }
+        } else {
+          await prisma.notification.deleteMany({
+            where: { truckOrderId: tripId },
+          });
+        }
+      }
+    } catch {
+      // Ignore — the gross weight is saved regardless.
+    }
+
     return { ok: true as const };
   } catch (error) {
     return { ok: false as const, error: toMessage(error) };
@@ -471,61 +560,93 @@ export async function recordNetReceived(
       };
     }
 
-    const trip = await prisma.truckOrder.findUnique({
-      where: { id: tripId },
-      select: {
-        status: true,
-        workOrderId: true,
-        invoiceId: true,
-        netWeight: true,
-        netReceivedFirstAt: true,
-        workOrder: { select: { seq: true } },
-        truck: { select: { vehicleNo: true } },
+    const netReceived = parsed.data.netWeightReceived;
+
+    // Read → lock-check → write in one Serializable tx, and guard the write with
+    // `invoiceId: null`, so a concurrent createInvoice can't claim the trip in the
+    // gap and let a now-billed weight drift.
+    const outcome = await prisma.$transaction(
+      async (tx) => {
+        const trip = await tx.truckOrder.findUnique({
+          where: { id: tripId },
+          select: {
+            status: true,
+            workOrderId: true,
+            invoiceId: true,
+            netWeight: true,
+            netReceivedFirstAt: true,
+            workOrder: { select: { seq: true } },
+            truck: { select: { vehicleNo: true } },
+          },
+        });
+        if (!trip)
+          return { ok: false as const, error: "Truck order not found" };
+        if (trip.status !== "COMPLETED") {
+          return {
+            ok: false as const,
+            error: "The trip must be completed at the port first.",
+          };
+        }
+        // 30-minute window after first entry; an invoiced trip is locked for all
+        // (the weight is billed and must never drift).
+        const lock = evaluateEditLock({
+          firstEnteredAt: trip.netReceivedFirstAt,
+          isAdmin: session.user.role === "ADMIN",
+          invoiced: trip.invoiceId !== null,
+          now: Date.now(),
+        });
+        if (!lock.canEdit) {
+          return {
+            ok: false as const,
+            error: lock.reason ?? "Editing is locked.",
+          };
+        }
+
+        const written = await tx.truckOrder.updateMany({
+          where: { id: tripId, invoiceId: null },
+          data: {
+            netWeightReceived: netReceived,
+            netReceivedByName: session.user.name,
+            netReceivedAt: new Date(),
+            // First-entry stamp (immutable) — set once, anchors the edit window.
+            ...(trip.netReceivedFirstAt === null
+              ? {
+                  netReceivedFirstAt: new Date(),
+                  netReceivedFirstByName: session.user.name,
+                }
+              : {}),
+          },
+        });
+        if (written.count === 0) {
+          return {
+            ok: false as const,
+            error:
+              "This trip was just added to an invoice — edit or delete that invoice first.",
+          };
+        }
+
+        return {
+          ok: true as const,
+          workOrderId: trip.workOrderId,
+          netSent: trip.netWeight?.toNumber() ?? null,
+          workOrderSeq: trip.workOrder?.seq ?? null,
+          vehicleNo: trip.truck.vehicleNo,
+        };
       },
-    });
-    if (!trip) return { ok: false as const, error: "Truck order not found" };
-    if (trip.status !== "COMPLETED") {
-      return {
-        ok: false as const,
-        error: "The trip must be completed at the port first.",
-      };
-    }
-    // 30-minute window after first entry; an invoiced trip is locked for all
-    // (the weight is billed and must never drift).
-    const lock = evaluateEditLock({
-      firstEnteredAt: trip.netReceivedFirstAt,
-      isAdmin: session.user.role === "ADMIN",
-      invoiced: trip.invoiceId !== null,
-      now: Date.now(),
-    });
-    if (!lock.canEdit) {
-      return { ok: false as const, error: lock.reason ?? "Editing is locked." };
+      { isolationLevel: "Serializable" },
+    );
+
+    if (!outcome.ok) {
+      return { ok: false as const, error: outcome.error };
     }
 
-    await prisma.truckOrder.update({
-      where: { id: tripId },
-      data: {
-        netWeightReceived: parsed.data.netWeightReceived,
-        netReceivedByName: session.user.name,
-        netReceivedAt: new Date(),
-        // First-entry stamp (immutable) — set once, anchors the edit window.
-        ...(trip.netReceivedFirstAt === null
-          ? {
-              netReceivedFirstAt: new Date(),
-              netReceivedFirstByName: session.user.name,
-            }
-          : {}),
-      },
-    });
-
-    // Net received vs net sent over tolerance → notify every admin. Best-effort:
-    // a notification failure must never fail the weighbridge save. (A COMPLETED
-    // trip always has a work order, but guard for the type all the same.)
+    // Keep the >0.3 MT alert in sync: raise it for every admin when over
+    // tolerance, otherwise clear any stale alert (a correction back in range).
+    // Best-effort — a notification failure must never fail the weighbridge save.
     try {
-      const netSent = trip.netWeight?.toNumber() ?? null;
       if (
-        trip.workOrder &&
-        isNetDiscrepancy(netSent, parsed.data.netWeightReceived)
+        outcome.workOrderSeq !== null &&
+        isNetDiscrepancy(outcome.netSent, netReceived)
       ) {
         const admins = await prisma.user.findMany({
           where: { role: "ADMIN" },
@@ -536,19 +657,23 @@ export async function recordNetReceived(
             data: admins.map((a) => ({
               userId: a.id,
               truckOrderId: tripId,
-              workOrderSeq: trip.workOrder!.seq,
-              vehicleNo: trip.truck.vehicleNo,
+              workOrderSeq: outcome.workOrderSeq!,
+              vehicleNo: outcome.vehicleNo,
             })),
             skipDuplicates: true,
           });
         }
+      } else {
+        await prisma.notification.deleteMany({
+          where: { truckOrderId: tripId },
+        });
       }
     } catch {
       // Ignore — the received weight is saved regardless.
     }
 
     revalidateGlobalTruckOrderPaths();
-    if (trip.workOrderId) revalidateWoTruckOrderPaths(trip.workOrderId);
+    if (outcome.workOrderId) revalidateWoTruckOrderPaths(outcome.workOrderId);
     return { ok: true as const };
   } catch (error) {
     return { ok: false as const, error: toMessage(error) };

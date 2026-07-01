@@ -27,19 +27,19 @@ function toMessage(error: unknown): string {
 }
 
 /**
- * Validates the vessel's DO budget inside the transaction: the sum of DO
- * quantities across a vessel's work orders can never exceed its BL quantity.
+ * Validates the vessel's WO budget inside the transaction: the sum of WO
+ * quantities across a vessel's work orders can never exceed its total quantity.
  * Run with Serializable isolation so concurrent edits can't oversubscribe.
  */
 async function assertVesselAvailability(
   tx: Prisma.TransactionClient,
   vesselId: string,
-  doQuantity: number,
+  woQuantity: number,
   excludeWorkOrderId?: string,
 ) {
   const vessel = await tx.vessel.findUnique({
     where: { id: vesselId },
-    select: { blQuantity: true, name: true },
+    select: { totalQuantity: true, name: true },
   });
   if (!vessel) throw new Error("The selected vessel no longer exists.");
 
@@ -48,16 +48,16 @@ async function assertVesselAvailability(
       vesselId,
       ...(excludeWorkOrderId ? { id: { not: excludeWorkOrderId } } : {}),
     },
-    _sum: { doQuantity: true },
+    _sum: { woQuantity: true },
   });
-  const allocated = agg._sum.doQuantity?.toNumber() ?? 0;
-  const available = vessel.blQuantity.toNumber() - allocated;
+  const allocated = agg._sum.woQuantity?.toNumber() ?? 0;
+  const available = vessel.totalQuantity.toNumber() - allocated;
 
-  if (doQuantity > available) {
+  if (woQuantity > available) {
     throw new Error(
-      `DO quantity exceeds ${vessel.name}'s availability — only ${formatQty(
+      `WO quantity exceeds ${vessel.name}'s availability — only ${formatQty(
         Math.max(available, 0),
-      )} MT of its BL is unallocated.`,
+      )} MT of its total is unallocated.`,
     );
   }
 }
@@ -71,7 +71,7 @@ export async function createWorkOrder(input: WorkOrderInput) {
       error: parsed.error.issues[0]?.message ?? "Invalid input",
     };
   }
-  const { date, vesselId, cargoTypeId, supplierId, partyId, doQuantity } =
+  const { date, vesselId, cargoTypeId, supplierId, partyId, woQuantity } =
     parsed.data;
   // Optional customs refs: empty strings are stored as NULL.
   const customsRefs = {
@@ -84,7 +84,7 @@ export async function createWorkOrder(input: WorkOrderInput) {
   try {
     await prisma.$transaction(
       async (tx) => {
-        await assertVesselAvailability(tx, vesselId, doQuantity);
+        await assertVesselAvailability(tx, vesselId, woQuantity);
         await tx.workOrder.create({
           data: {
             date,
@@ -92,7 +92,7 @@ export async function createWorkOrder(input: WorkOrderInput) {
             cargoTypeId,
             supplierId,
             partyId,
-            doQuantity,
+            woQuantity,
             createdByName: session.user.name,
             ...customsRefs,
           },
@@ -110,8 +110,8 @@ export async function createWorkOrder(input: WorkOrderInput) {
 /**
  * Deletes a work order — only allowed while it has no truck orders (nothing
  * has been executed against it). Truck allotments cascade away with it, and
- * the vessel's DO availability frees automatically (it is computed as
- * BL − Σ work-order DO). A trip racing this delete is caught by the
+ * the vessel's WO availability frees automatically (it is computed as
+ * total − Σ work-order WO). A trip racing this delete is caught by the
  * TruckOrder→WorkOrder Restrict FK.
  */
 export async function deleteWorkOrder(id: string) {
@@ -161,7 +161,7 @@ export async function updateWorkOrder(id: string, input: WorkOrderInput) {
       error: parsed.error.issues[0]?.message ?? "Invalid input",
     };
   }
-  const { date, vesselId, cargoTypeId, supplierId, partyId, doQuantity } =
+  const { date, vesselId, cargoTypeId, supplierId, partyId, woQuantity } =
     parsed.data;
   // Optional customs refs: empty strings are stored as NULL.
   const customsRefs = {
@@ -190,7 +190,7 @@ export async function updateWorkOrder(id: string, input: WorkOrderInput) {
         // Trips and invoices print the work order's vessel/cargo/supplier/
         // party — once a trip exists, changing them would rewrite those
         // documents (e.g. an invoice showing a party that never agreed to
-        // the frozen rate). Date, DO quantity and customs refs stay editable.
+        // the frozen rate). Date, WO quantity and customs refs stay editable.
         const partiesChanged =
           vesselId !== existing.vesselId ||
           cargoTypeId !== existing.cargoTypeId ||
@@ -203,13 +203,13 @@ export async function updateWorkOrder(id: string, input: WorkOrderInput) {
         }
 
         const delivered = existing.delivered.toNumber();
-        if (doQuantity < delivered) {
+        if (woQuantity < delivered) {
           throw new Error(
-            `DO quantity can't be less than the delivered amount (${formatQty(delivered)} MT).`,
+            `WO quantity can't be less than the delivered amount (${formatQty(delivered)} MT).`,
           );
         }
 
-        await assertVesselAvailability(tx, vesselId, doQuantity, id);
+        await assertVesselAvailability(tx, vesselId, woQuantity, id);
         await tx.workOrder.update({
           where: { id },
           data: {
@@ -218,7 +218,7 @@ export async function updateWorkOrder(id: string, input: WorkOrderInput) {
             cargoTypeId,
             supplierId,
             partyId,
-            doQuantity,
+            woQuantity,
             ...customsRefs,
           },
         });

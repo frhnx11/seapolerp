@@ -62,11 +62,14 @@ model TruckOwner {
 
 /// Simple name-only master lists managed from Admin → Master Data.
 model CargoType {
-  id         String      @id @default(cuid())
-  name       String      @unique
-  createdAt  DateTime    @default(now()) @map("created_at")
-  updatedAt  DateTime    @updatedAt @map("updated_at")
-  workOrders WorkOrder[]
+  id            String         @id @default(cuid())
+  name          String         @unique
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  workOrders     WorkOrder[]
+  billsOfLading  BillOfLading[]
+  billsOfEntry   BillOfEntry[]
+  deliveryOrders DeliveryOrder[]
 
   @@map("cargo_types")
 }
@@ -77,12 +80,28 @@ model Party {
   /// Transport rate in ₹ per MT — multiplied with a trip's lowest net weight on
   /// invoices. Snapshotted onto each invoice at creation; null until the admin
   /// sets it (invoice creation is blocked while unset).
-  rate       Decimal?    @db.Decimal(12, 2)
-  createdAt  DateTime    @default(now()) @map("created_at")
-  updatedAt  DateTime    @updatedAt @map("updated_at")
-  workOrders WorkOrder[]
+  rate          Decimal?       @db.Decimal(12, 2)
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  workOrders     WorkOrder[]
+  // Delivery-order receivers (per-DO, independent of the vessel's importer).
+  deliveryOrders DeliveryOrder[]
 
   @@map("parties")
+}
+
+/// Importer — the company that imports a vessel's cargo. The delivery-order flow
+/// (BL/BE/DO) references this, NOT the work-order `Party`. Name-only master.
+model Importer {
+  id             String          @id @default(cuid())
+  name           String          @unique
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  billsOfLading  BillOfLading[]
+  billsOfEntry   BillOfEntry[]
+  deliveryOrders DeliveryOrder[]
+
+  @@map("importers")
 }
 
 model Supplier {
@@ -93,6 +112,18 @@ model Supplier {
   workOrders WorkOrder[]
 
   @@map("suppliers")
+}
+
+/// Discount parties — who transport invoices are billed to (replacing the truck
+/// owner). Name-only master for now; the invoice link is added in a later step.
+model DiscountParty {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  invoices  Invoice[]
+
+  @@map("discount_parties")
 }
 
 /// Loading sites at the port (W/H, W/F, C.BELT, …) — where trucks load.
@@ -106,27 +137,182 @@ model LoadingSite {
   @@map("loading_sites")
 }
 
-/// Vessel (ship arrival) master — carries the total BL quantity of goods in the
-/// ship. Work orders allocate DO quantities against it; the sum of a vessel's DO
-/// quantities can never exceed its BL. Each new arrival/consignment is a new
+/// Vessel (ship arrival) master — carries the total quantity of goods in the
+/// ship. Work orders allocate WO quantities against it; the sum of a vessel's WO
+/// quantities can never exceed its total. Each new arrival/consignment is a new
 /// vessel row. `seq` renders as "VSL-#001".
 model Vessel {
-  id         String      @id @default(cuid())
-  seq        Int         @unique @default(autoincrement())
-  name       String      @unique
-  blQuantity Decimal     @map("bl_quantity") @db.Decimal(12, 3)
-  createdAt  DateTime    @default(now()) @map("created_at")
-  updatedAt  DateTime    @updatedAt @map("updated_at")
-  workOrders WorkOrder[]
+  id            String      @id @default(cuid())
+  seq           Int         @unique @default(autoincrement())
+  name          String      @unique
+  totalQuantity Decimal     @map("total_quantity") @db.Decimal(12, 3)
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+  workOrders    WorkOrder[]
 
   @@map("vessels")
 }
 
+/// Delivery-Order flow vessel — fully separate from the work-order `Vessel`
+/// above. The DO flow never shares rows with the work-order flow; this is the
+/// root of its Bill of Lading → Bill of Entry → Delivery Order chain. `seq`
+/// renders as "DV-#001".
+model DoVessel {
+  id            String         @id @default(cuid())
+  seq           Int            @unique @default(autoincrement())
+  name          String         @unique
+  totalQuantity Decimal        @map("total_quantity") @db.Decimal(12, 3)
+  depth         Decimal        @db.Decimal(8, 3)
+  hatch         Decimal        @db.Decimal(8, 3)
+  /// When the vessel arrived at port (shown on the Cargo Delivery Report header).
+  arrivalDate   DateTime?      @map("arrival_date")
+  createdByName String?        @map("created_by_name")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  billsOfLading  BillOfLading[]
+  billsOfEntry   BillOfEntry[]
+  deliveryOrders DeliveryOrder[]
+
+  @@map("do_vessels")
+}
+
+/// A bill of lading issued against a `DoVessel`. Σ of a vessel's BL quantities
+/// can't exceed its total. Parent of the Bill of Entry → Delivery Order chain.
+model BillOfLading {
+  id            String   @id @default(cuid())
+  seq           Int      @unique @default(autoincrement())
+  blNumber      Int      @map("bl_number")
+  vesselId      String   @map("vessel_id")
+  importerId    String   @map("importer_id")
+  cargoTypeId   String   @map("cargo_type_id")
+  blQuantity    Decimal  @map("bl_quantity") @db.Decimal(12, 3)
+  billOfEntryId String?  @map("bill_of_entry_id")
+  createdByName String?  @map("created_by_name")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  vessel      DoVessel     @relation(fields: [vesselId], references: [id], onDelete: Restrict)
+  importer    Importer     @relation(fields: [importerId], references: [id], onDelete: Restrict)
+  cargoType   CargoType    @relation(fields: [cargoTypeId], references: [id], onDelete: Restrict)
+  billOfEntry BillOfEntry? @relation(fields: [billOfEntryId], references: [id], onDelete: SetNull)
+
+  // BL numbers are unique within a vessel (they may repeat across vessels).
+  @@unique([vesselId, blNumber])
+  @@index([vesselId])
+  @@index([importerId])
+  @@index([cargoTypeId])
+  @@index([billOfEntryId])
+  @@map("bills_of_lading")
+}
+
+/// A bill of entry groups one or more whole BLs that share the same vessel,
+/// importer and cargo type. Each BL belongs to at most one BE; BE quantity is the
+/// sum of its BLs (computed, not stored). Parent of the Delivery Order layer.
+model BillOfEntry {
+  id            String   @id @default(cuid())
+  seq           Int      @unique @default(autoincrement())
+  beNumber      Int      @map("be_number")
+  vesselId      String   @map("vessel_id")
+  importerId    String   @map("importer_id")
+  cargoTypeId   String   @map("cargo_type_id")
+  createdByName String?  @map("created_by_name")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  vessel        DoVessel       @relation(fields: [vesselId], references: [id], onDelete: Restrict)
+  importer      Importer       @relation(fields: [importerId], references: [id], onDelete: Restrict)
+  cargoType     CargoType      @relation(fields: [cargoTypeId], references: [id], onDelete: Restrict)
+  billsOfLading BillOfLading[]
+
+  // BE numbers are unique within a vessel (they may repeat across vessels).
+  @@unique([vesselId, beNumber])
+  @@index([vesselId])
+  @@index([importerId])
+  @@index([cargoTypeId])
+  @@map("bills_of_entry")
+}
+
+/// A delivery order against a (vessel, importer, cargo type) combo. Σ of a combo's
+/// DO quantities can't exceed that combo's total bill-of-entry quantity. `seq`
+/// is auto-assigned and rendered "DO-#001". `party` is the receiver — per-DO and
+/// independent of the combo (any party can be chosen for any delivery order).
+model DeliveryOrder {
+  id            String   @id @default(cuid())
+  seq           Int      @unique @default(autoincrement())
+  vesselId      String   @map("vessel_id")
+  importerId    String   @map("importer_id")
+  cargoTypeId   String   @map("cargo_type_id")
+  partyId       String   @map("party_id")
+  doQuantity    Decimal  @map("do_quantity") @db.Decimal(12, 3)
+  delivered     Decimal  @default(0) @db.Decimal(12, 3)
+  createdByName String?  @map("created_by_name")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  vessel      DoVessel       @relation(fields: [vesselId], references: [id], onDelete: Restrict)
+  importer    Importer       @relation(fields: [importerId], references: [id], onDelete: Restrict)
+  cargoType   CargoType      @relation(fields: [cargoTypeId], references: [id], onDelete: Restrict)
+  party       Party          @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  truckOrders DoTruckOrder[]
+
+  @@index([vesselId])
+  @@index([importerId])
+  @@index([cargoTypeId])
+  @@index([partyId])
+  @@map("delivery_orders")
+}
+
+/// Delivery-Order flow truck registry — separate from the work-order `Truck`
+/// master. Holds just the vehicle number (created on the spot from the Truck DO
+/// popup; unique). Mirrors how `DoVessel` is separate from `Vessel`.
+model DoTruck {
+  id            String         @id @default(cuid())
+  vehicleNo     String         @unique @map("vehicle_no")
+  createdByName String?        @map("created_by_name")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  truckOrders   DoTruckOrder[]
+
+  @@map("do_trucks")
+}
+
+/// A truck delivering against a specific delivery order. `seq` renders "DTO-#001".
+/// Only tare is captured now; later weighing stages (→ DeliveryOrder.delivered)
+/// land when the delivery-increment flow is defined.
+model DoTruckOrder {
+  id              String   @id @default(cuid())
+  seq             Int      @unique @default(autoincrement())
+  deliveryOrderId String   @map("delivery_order_id")
+  truckId         String   @map("truck_id")
+  tareWeight      Decimal  @map("tare_weight") @db.Decimal(12, 3)
+  grossWeight     Decimal? @map("gross_weight") @db.Decimal(12, 3)
+  netWeight       Decimal? @map("net_weight") @db.Decimal(12, 3)
+  // Attribution + 30-min edit window. createdByName/createdAt are the tare
+  // first-entry anchor; tare/gross each track their latest editor, gross also its
+  // immutable first-entry stamp (the window anchor for gross corrections).
+  createdByName    String?   @map("created_by_name")
+  tareByName       String?   @map("tare_by_name")
+  tareAt           DateTime? @map("tare_at")
+  grossByName      String?   @map("gross_by_name")
+  grossAt          DateTime? @map("gross_at")
+  grossFirstByName String?   @map("gross_first_by_name")
+  grossFirstAt     DateTime? @map("gross_first_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  deliveryOrder DeliveryOrder @relation(fields: [deliveryOrderId], references: [id], onDelete: Restrict)
+  truck         DoTruck       @relation(fields: [truckId], references: [id], onDelete: Restrict)
+
+  @@index([deliveryOrderId])
+  @@index([truckId])
+  @@map("do_truck_orders")
+}
+
 /// Work Order — an order to deliver part (or all) of a vessel's goods to a Party
 /// using many trucks. `seq` is a DB sequence rendered as "WO-#001". Quantities
-/// are in metric tons; `doQuantity` is this order's allocation of the vessel's
-/// BL (mutable over time, ≥ delivered, and Σ per vessel ≤ BL); `delivered` is
-/// updated later by the delivery module; balance (DO - delivered) is derived.
+/// are in metric tons; `woQuantity` is this order's allocation of the vessel's
+/// total (mutable over time, ≥ delivered, and Σ per vessel ≤ total); `delivered`
+/// is updated later by the delivery module; balance (WO qty − delivered) is derived.
 model WorkOrder {
   id         String   @id @default(cuid())
   seq        Int      @unique @default(autoincrement())
@@ -135,7 +321,7 @@ model WorkOrder {
   cargoTypeId String    @map("cargo_type_id")
   supplierId  String    @map("supplier_id")
   partyId     String    @map("party_id")
-  doQuantity  Decimal   @map("do_quantity") @db.Decimal(12, 3)
+  woQuantity  Decimal   @map("wo_quantity") @db.Decimal(12, 3)
   delivered   Decimal   @default(0) @db.Decimal(12, 3)
   /// Name snapshot of the admin who created the order (null on legacy rows).
   createdByName String? @map("created_by_name")
@@ -242,9 +428,18 @@ model Invoice {
   workOrderId String    @map("work_order_id")
   workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Restrict)
 
-  date       String  @map("invoice_date") // "YYYY-MM-DD", entered manually
-  truckOwner String  @map("truck_owner") // owner company as on the trucks master
-  rate       Decimal @db.Decimal(12, 2) // ₹/MT, frozen at creation
+  date String @map("invoice_date") // "YYYY-MM-DD", entered manually
+  // The vendor's own invoice reference for this bill: a free-text number (e.g.
+  // "5844 & 5847") and its date. Both nullable in the DB for migration safety;
+  // required at the app layer (the wizard mandates both) and shown on the bill.
+  vendorInvoiceNumber String? @map("vendor_invoice_number")
+  vendorInvoiceDate   String? @map("vendor_invoice_date") // "YYYY-MM-DD"
+  // Who the invoice is billed to (a discount party from master data). Nullable in
+  // the DB for migration safety; required at the app layer (the wizard makes it a
+  // mandatory pick). One invoice may mix trips of any truck owner.
+  discountPartyId String?        @map("discount_party_id")
+  discountParty   DiscountParty? @relation(fields: [discountPartyId], references: [id], onDelete: Restrict)
+  rate            Decimal        @db.Decimal(12, 2) // ₹/MT, frozen at creation
 
   totalQty    Decimal @map("total_qty") @db.Decimal(12, 3) // Σ lowest net weights
   amount      Decimal @db.Decimal(14, 2) // totalQty × rate
@@ -260,6 +455,7 @@ model Invoice {
   truckOrders TruckOrder[]
 
   @@index([workOrderId])
+  @@index([discountPartyId])
   @@map("invoices")
 }
 

@@ -40,7 +40,7 @@ export async function WorkOrdersScreen({
       }),
       prisma.vessel.findMany({
         orderBy: { name: "asc" },
-        select: { id: true, name: true, blQuantity: true },
+        select: { id: true, name: true, totalQuantity: true },
       }),
       prisma.cargoType.findMany({
         orderBy: { name: "asc" },
@@ -48,7 +48,7 @@ export async function WorkOrdersScreen({
       }),
       prisma.workOrder.groupBy({
         by: ["vesselId"],
-        _sum: { doQuantity: true },
+        _sum: { woQuantity: true },
       }),
     ]);
 
@@ -64,9 +64,9 @@ export async function WorkOrdersScreen({
     supplierName: w.supplier.name,
     partyId: w.partyId,
     partyName: w.party.name,
-    doQuantity: w.doQuantity.toNumber(),
+    woQuantity: w.woQuantity.toNumber(),
     delivered: w.delivered.toNumber(),
-    balance: w.doQuantity.minus(w.delivered).toNumber(),
+    balance: w.woQuantity.minus(w.delivered).toNumber(),
     bePermissionNo: w.bePermissionNo,
     eaIaNo: w.eaIaNo,
     eaIaDate: w.eaIaDate,
@@ -76,13 +76,13 @@ export async function WorkOrdersScreen({
   }));
 
   const allocated = new Map(
-    alloc.map((a) => [a.vesselId, a._sum.doQuantity?.toNumber() ?? 0]),
+    alloc.map((a) => [a.vesselId, a._sum.woQuantity?.toNumber() ?? 0]),
   );
   const vesselOptions = vessels.map((v) => ({
     id: v.id,
     name: v.name,
-    blQuantity: v.blQuantity.toNumber(),
-    allocatedDo: allocated.get(v.id) ?? 0,
+    totalQuantity: v.totalQuantity.toNumber(),
+    allocatedWo: allocated.get(v.id) ?? 0,
   }));
 
   return (

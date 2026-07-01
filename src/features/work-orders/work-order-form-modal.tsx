@@ -63,8 +63,8 @@ export function WorkOrderFormModal({
   const [cargoTypeId, setCargoTypeId] = useState(workOrder?.cargoTypeId ?? "");
   const [supplierId, setSupplierId] = useState(workOrder?.supplierId ?? "");
   const [partyId, setPartyId] = useState(workOrder?.partyId ?? "");
-  const [doQuantity, setDoQuantity] = useState(
-    workOrder ? String(workOrder.doQuantity) : "",
+  const [woQuantity, setWoQuantity] = useState(
+    workOrder ? String(workOrder.woQuantity) : "",
   );
   const [bePermissionNo, setBePermissionNo] = useState(
     workOrder?.bePermissionNo ?? "",
@@ -99,16 +99,16 @@ export function WorkOrderFormModal({
     }
   }
 
-  // How much of the selected vessel's BL this WO may take: BL minus what other
-  // work orders hold. When editing on the same vessel, this WO's own current DO
-  // is part of "allocated", so add it back.
+  // How much of the selected vessel's total this WO may take: total minus what
+  // other work orders hold. When editing on the same vessel, this WO's own
+  // current WO qty is part of "allocated", so add it back.
   const vessel = vessels.find((v) => v.id === vesselId);
-  const ownDo =
+  const ownWo =
     isEdit && workOrder && workOrder.vesselId === vesselId
-      ? workOrder.doQuantity
+      ? workOrder.woQuantity
       : 0;
   const available = vessel
-    ? vessel.blQuantity - vessel.allocatedDo + ownDo
+    ? vessel.totalQuantity - vessel.allocatedWo + ownWo
     : null;
 
   async function handleSubmit(e: React.FormEvent) {
@@ -119,18 +119,18 @@ export function WorkOrderFormModal({
     if (!cargoTypeId) return setError("Cargo type is required");
     if (!supplierId) return setError("Supplier is required");
     if (!partyId) return setError("Party is required");
-    const dq = Number(doQuantity);
-    if (!doQuantity || dq <= 0) {
-      return setError("Enter a DO quantity greater than 0");
+    const dq = Number(woQuantity);
+    if (!woQuantity || dq <= 0) {
+      return setError("Enter a WO quantity greater than 0");
     }
     if (isEdit && workOrder && dq < workOrder.delivered) {
       return setError(
-        `DO quantity can't be less than the delivered amount (${formatQty(workOrder.delivered)} MT).`,
+        `WO quantity can't be less than the delivered amount (${formatQty(workOrder.delivered)} MT).`,
       );
     }
     if (available !== null && dq > available) {
       return setError(
-        `DO quantity exceeds the vessel's availability — only ${formatQty(Math.max(available, 0))} MT of its BL is unallocated.`,
+        `WO quantity exceeds the vessel's availability — only ${formatQty(Math.max(available, 0))} MT of its total is unallocated.`,
       );
     }
 
@@ -140,7 +140,7 @@ export function WorkOrderFormModal({
       cargoTypeId,
       supplierId,
       partyId,
-      doQuantity: dq,
+      woQuantity: dq,
       bePermissionNo,
       eaIaNo,
       eaIaDate,
@@ -303,13 +303,13 @@ export function WorkOrderFormModal({
             </select>
           </Field>
 
-          <Field label="DO Quantity (MT)">
+          <Field label="WO Quantity (MT)">
             <input
               type="number"
               min="0"
               step="0.001"
-              value={doQuantity}
-              onChange={(e) => setDoQuantity(e.target.value)}
+              value={woQuantity}
+              onChange={(e) => setWoQuantity(e.target.value)}
               required
               className={inputClass}
               placeholder="e.g. 1500"
@@ -320,7 +320,7 @@ export function WorkOrderFormModal({
                 <span className="font-medium text-gray-700">
                   {formatQty(Math.max(available, 0))} MT
                 </span>{" "}
-                of {formatQty(vessel.blQuantity)} MT BL
+                of {formatQty(vessel.totalQuantity)} MT total
               </p>
             )}
           </Field>
@@ -431,7 +431,7 @@ export function WorkOrderFormModal({
               <span className="font-semibold text-gray-900">
                 {formatWoNumber(workOrder.seq)}
               </span>
-              ? Its truck allotments will be removed and its DO quantity will
+              ? Its truck allotments will be removed and its WO quantity will
               return to{" "}
               <span className="font-semibold text-gray-900">
                 {workOrder.vesselName}

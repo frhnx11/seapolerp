@@ -3,6 +3,7 @@ import "dotenv/config";
 import { prisma } from "@/core/db";
 import {
   SAMPLE_CARGO_TYPES,
+  SAMPLE_IMPORTERS,
   SAMPLE_LOADING_SITES,
   SAMPLE_PARTIES,
   SAMPLE_SUPPLIERS,
@@ -16,7 +17,7 @@ import {
  * the in-app super-admin reset).
  */
 async function main() {
-  const [cargo, parties, suppliers, loadingSites, truckOwners] =
+  const [cargo, parties, importers, suppliers, loadingSites, truckOwners] =
     await Promise.all([
       prisma.cargoType.createMany({
         data: SAMPLE_CARGO_TYPES.map((name) => ({ name })),
@@ -28,6 +29,10 @@ async function main() {
           name,
           rate: 300 + Math.floor(Math.random() * 40) * 5,
         })),
+        skipDuplicates: true,
+      }),
+      prisma.importer.createMany({
+        data: SAMPLE_IMPORTERS.map((name) => ({ name })),
         skipDuplicates: true,
       }),
       prisma.supplier.createMany({
@@ -45,7 +50,7 @@ async function main() {
     ]);
 
   console.log(
-    `Seeded master data — cargo types: +${cargo.count}, parties: +${parties.count}, suppliers: +${suppliers.count}, loading sites: +${loadingSites.count}, truck owners: +${truckOwners.count}`,
+    `Seeded master data — cargo types: +${cargo.count}, parties: +${parties.count}, importers: +${importers.count}, suppliers: +${suppliers.count}, loading sites: +${loadingSites.count}, truck owners: +${truckOwners.count}`,
   );
 }
 

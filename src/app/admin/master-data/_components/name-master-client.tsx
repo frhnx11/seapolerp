@@ -1,11 +1,13 @@
 "use client";
 
 import {
+  Building2,
   Factory,
   type LucideIcon,
   MapPin,
   Package,
   Pencil,
+  Percent,
   Plus,
   Search,
   Store,
@@ -32,9 +34,11 @@ import { NameFormModal } from "./name-form-modal";
 const ICONS = {
   package: Package,
   store: Store,
+  building: Building2,
   factory: Factory,
   mapPin: MapPin,
   users: Users,
+  percent: Percent,
 } satisfies Record<string, LucideIcon>;
 
 export function NameMasterClient({

@@ -33,8 +33,9 @@ export async function clearAllData() {
 }
 
 /**
- * Wipes everything, then seeds sample master data, ~100 trucks, vessels, and the
- * four sample staff accounts. SUPER_ADMIN only. Returns the seeded logins.
+ * Wipes everything, then seeds sample master data, ~100 trucks, work-order +
+ * delivery-order vessels, and the five sample staff accounts. SUPER_ADMIN only.
+ * Returns the seeded logins.
  */
 export async function resetWithSampleData(): Promise<
   | { ok: true; logins: SeededLogin[]; password: string }

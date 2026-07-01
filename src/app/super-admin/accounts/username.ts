@@ -11,6 +11,7 @@ export const ROLE_LABELS: Record<string, string> = {
   PORT_WB: "Port Weighbridge",
   PARTY_WB: "Party Weighbridge",
   ACCOUNTANT: "Accountant",
+  C_AND_F: "C&F",
 };
 
 /** Username abbreviation per creatable account type. */
@@ -19,6 +20,7 @@ export const ROLE_ABBR: Record<string, string> = {
   PORT_WB: "prt",
   PARTY_WB: "pty",
   ACCOUNTANT: "act",
+  C_AND_F: "cnf",
 };
 
 /** Roles a super admin can create here (everything except SUPER_ADMIN). */
@@ -27,6 +29,7 @@ export const CREATABLE_ROLES = [
   "PORT_WB",
   "PARTY_WB",
   "ACCOUNTANT",
+  "C_AND_F",
 ] as const;
 
 export type CreatableRole = (typeof CREATABLE_ROLES)[number];

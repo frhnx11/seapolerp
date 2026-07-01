@@ -73,12 +73,16 @@ function createRow(key: NameMasterKey, name: string, rate: number | null) {
       return prisma.cargoType.create({ data: { name } });
     case "party":
       return prisma.party.create({ data: { name, rate } });
+    case "importer":
+      return prisma.importer.create({ data: { name } });
     case "supplier":
       return prisma.supplier.create({ data: { name } });
     case "loadingSite":
       return prisma.loadingSite.create({ data: { name } });
     case "truckOwner":
       return prisma.truckOwner.create({ data: { name } });
+    case "discountParty":
+      return prisma.discountParty.create({ data: { name } });
   }
 }
 
@@ -93,12 +97,16 @@ function updateRow(
       return prisma.cargoType.update({ where: { id }, data: { name } });
     case "party":
       return prisma.party.update({ where: { id }, data: { name, rate } });
+    case "importer":
+      return prisma.importer.update({ where: { id }, data: { name } });
     case "supplier":
       return prisma.supplier.update({ where: { id }, data: { name } });
     case "loadingSite":
       return prisma.loadingSite.update({ where: { id }, data: { name } });
     case "truckOwner":
       return prisma.truckOwner.update({ where: { id }, data: { name } });
+    case "discountParty":
+      return prisma.discountParty.update({ where: { id }, data: { name } });
   }
 }
 
@@ -108,12 +116,16 @@ function deleteRow(key: NameMasterKey, id: string) {
       return prisma.cargoType.delete({ where: { id } });
     case "party":
       return prisma.party.delete({ where: { id } });
+    case "importer":
+      return prisma.importer.delete({ where: { id } });
     case "supplier":
       return prisma.supplier.delete({ where: { id } });
     case "loadingSite":
       return prisma.loadingSite.delete({ where: { id } });
     case "truckOwner":
       return prisma.truckOwner.delete({ where: { id } });
+    case "discountParty":
+      return prisma.discountParty.delete({ where: { id } });
   }
 }
 

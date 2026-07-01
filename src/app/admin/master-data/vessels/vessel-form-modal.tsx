@@ -23,8 +23,8 @@ export function VesselFormModal({
 }) {
   const isEdit = Boolean(vessel);
   const [name, setName] = useState(vessel?.name ?? "");
-  const [blQuantity, setBlQuantity] = useState(
-    vessel ? String(vessel.blQuantity) : "",
+  const [totalQuantity, setTotalQuantity] = useState(
+    vessel ? String(vessel.totalQuantity) : "",
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -33,16 +33,16 @@ export function VesselFormModal({
     e.preventDefault();
     setError("");
     if (!name.trim()) return setError("Vessel name is required");
-    if (!blQuantity || Number(blQuantity) <= 0) {
-      return setError("Enter a BL quantity greater than 0");
+    if (!totalQuantity || Number(totalQuantity) <= 0) {
+      return setError("Enter a total quantity greater than 0");
     }
-    if (isEdit && vessel && Number(blQuantity) < vessel.allocatedDo) {
+    if (isEdit && vessel && Number(totalQuantity) < vessel.allocatedWo) {
       return setError(
-        `BL quantity can't be less than the ${formatQty(vessel.allocatedDo)} MT already allocated to this vessel's work orders.`,
+        `Total quantity can't be less than the ${formatQty(vessel.allocatedWo)} MT already allocated to this vessel's work orders.`,
       );
     }
 
-    const input = { name: name.trim(), blQuantity: Number(blQuantity) };
+    const input = { name: name.trim(), totalQuantity: Number(totalQuantity) };
 
     setLoading(true);
     const result =
@@ -101,26 +101,26 @@ export function VesselFormModal({
 
           <div>
             <label
-              htmlFor="vessel-bl"
+              htmlFor="vessel-total"
               className="mb-1 block text-sm font-medium text-gray-700"
             >
-              BL Quantity (MT)<span className="text-red-500"> *</span>
+              Total Quantity (MT)<span className="text-red-500"> *</span>
             </label>
             <input
-              id="vessel-bl"
+              id="vessel-total"
               type="number"
               min="0"
               step="0.001"
-              value={blQuantity}
-              onChange={(e) => setBlQuantity(e.target.value)}
+              value={totalQuantity}
+              onChange={(e) => setTotalQuantity(e.target.value)}
               required
               className={inputClass}
               placeholder="e.g. 50000"
             />
-            {isEdit && vessel && vessel.allocatedDo > 0 && (
+            {isEdit && vessel && vessel.allocatedWo > 0 && (
               <p className="mt-1 text-xs text-gray-500">
-                {formatQty(vessel.allocatedDo)} MT is already allocated to work
-                orders — the BL can&apos;t go below that.
+                {formatQty(vessel.allocatedWo)} MT is already allocated to work
+                orders — the total can&apos;t go below that.
               </p>
             )}
           </div>

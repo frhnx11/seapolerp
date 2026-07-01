@@ -2,6 +2,10 @@ import { prisma } from "@/core/db";
 import { getTodayIso, WHEELS } from "@/features/trucks/truck";
 import {
   SAMPLE_CARGO_TYPES,
+  SAMPLE_DISCOUNT_PARTIES,
+  SAMPLE_DO_TRUCKS,
+  SAMPLE_DO_VESSELS,
+  SAMPLE_IMPORTERS,
   SAMPLE_LOADING_SITES,
   SAMPLE_PARTIES,
   SAMPLE_SUPPLIERS,
@@ -36,7 +40,7 @@ export async function wipeAllData(): Promise<void> {
     );
     // Clear all domain + master tables and reset their identity sequences.
     await tx.$executeRawUnsafe(
-      `TRUNCATE TABLE "vessels","work_orders","truck_orders","invoices","allotted_trucks","notifications","trucks","truck_owners","cargo_types","parties","suppliers","loading_sites" RESTART IDENTITY CASCADE`,
+      `TRUNCATE TABLE "vessels","work_orders","truck_orders","invoices","allotted_trucks","notifications","trucks","truck_owners","cargo_types","parties","importers","suppliers","loading_sites","discount_parties","do_vessels","do_trucks","bills_of_lading","bills_of_entry","delivery_orders","do_truck_orders" RESTART IDENTITY CASCADE`,
     );
     // Transient email-verification tokens.
     await tx.$executeRawUnsafe(`DELETE FROM "verification"`);
@@ -147,6 +151,7 @@ const SAMPLE_ACCOUNTS: { name: string; role: CreatableRole }[] = [
   { name: "Ramesh", role: "PORT_WB" },
   { name: "Suresh", role: "PARTY_WB" },
   { name: "Rajesh", role: "ACCOUNTANT" },
+  { name: "Mahesh", role: "C_AND_F" },
 ];
 
 export type SeededLogin = {
@@ -156,10 +161,10 @@ export type SeededLogin = {
 };
 
 /**
- * Seeds sample master data, ~100 trucks, and vessels (with BL; no work orders,
- * so Allocated DO / Delivered stay 0), then provisions the four sample staff
- * accounts. Returns the seeded logins so the UI can show them. Call AFTER
- * `wipeAllData()`.
+ * Seeds sample master data, ~100 trucks, work-order + delivery-order vessels
+ * (with a total; no orders, so Allocated WO / DO + Delivered stay 0), then
+ * provisions the five sample staff accounts. Returns the seeded logins so the UI
+ * can show them. Call AFTER `wipeAllData()`.
  */
 export async function seedSampleData(): Promise<{
   logins: SeededLogin[];
@@ -181,12 +186,20 @@ export async function seedSampleData(): Promise<{
       })),
       skipDuplicates: true,
     });
+    await tx.importer.createMany({
+      data: SAMPLE_IMPORTERS.map((name) => ({ name })),
+      skipDuplicates: true,
+    });
     await tx.supplier.createMany({
       data: SAMPLE_SUPPLIERS.map((name) => ({ name })),
       skipDuplicates: true,
     });
     await tx.loadingSite.createMany({
       data: SAMPLE_LOADING_SITES.map((name) => ({ name })),
+      skipDuplicates: true,
+    });
+    await tx.discountParty.createMany({
+      data: SAMPLE_DISCOUNT_PARTIES.map((name) => ({ name })),
       skipDuplicates: true,
     });
     await tx.truckOwner.createMany({
@@ -204,7 +217,28 @@ export async function seedSampleData(): Promise<{
     });
 
     await tx.vessel.createMany({
-      data: SAMPLE_VESSELS.map(([name, blQuantity]) => ({ name, blQuantity })),
+      data: SAMPLE_VESSELS.map(([name, totalQuantity]) => ({
+        name,
+        totalQuantity,
+      })),
+      skipDuplicates: true,
+    });
+
+    // Delivery-order vessels (no BLs/BEs/DOs seeded — those are added manually).
+    await tx.doVessel.createMany({
+      data: SAMPLE_DO_VESSELS.map((v) => ({
+        name: v.name,
+        totalQuantity: v.totalQuantity,
+        depth: v.depth,
+        hatch: v.hatch,
+        arrivalDate: new Date(`${v.arrivalDate}T00:00:00+05:30`),
+      })),
+      skipDuplicates: true,
+    });
+
+    // DO truck registry (created on-the-spot from Truck DOs; seeded for convenience).
+    await tx.doTruck.createMany({
+      data: SAMPLE_DO_TRUCKS.map((vehicleNo) => ({ vehicleNo })),
       skipDuplicates: true,
     });
   });

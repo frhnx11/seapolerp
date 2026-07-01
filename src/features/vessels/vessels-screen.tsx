@@ -4,7 +4,7 @@ import { getTodayIso } from "@/features/trucks/truck";
 
 import { VesselsClient, type VesselTrackRow } from "./vessels-client";
 
-/** Vessel progress tracker — BL vs delivered across each vessel's work orders. */
+/** Vessel progress tracker — total vs delivered across each vessel's work orders. */
 export async function VesselsScreen({ month }: { month?: string }) {
   // Scoped to the active month (by creation date) so the query stays bounded.
   // Asia/Kolkata is a fixed +05:30 (no DST), so the month's IST boundaries map
@@ -18,21 +18,21 @@ export async function VesselsScreen({ month }: { month?: string }) {
     orderBy: { seq: "desc" },
     include: {
       workOrders: {
-        select: { id: true, seq: true, doQuantity: true, delivered: true },
+        select: { id: true, seq: true, woQuantity: true, delivered: true },
       },
     },
   });
 
   const rows: VesselTrackRow[] = vessels.map((v) => {
-    const allocatedDo = v.workOrders.reduce(
-      (sum, w) => sum + w.doQuantity.toNumber(),
+    const allocatedWo = v.workOrders.reduce(
+      (sum, w) => sum + w.woQuantity.toNumber(),
       0,
     );
     const delivered = v.workOrders.reduce(
       (sum, w) => sum + w.delivered.toNumber(),
       0,
     );
-    const blQuantity = v.blQuantity.toNumber();
+    const totalQuantity = v.totalQuantity.toNumber();
     return {
       id: v.id,
       seq: v.seq,
@@ -41,10 +41,10 @@ export async function VesselsScreen({ month }: { month?: string }) {
       createdYmd: new Intl.DateTimeFormat("en-CA", {
         timeZone: "Asia/Kolkata",
       }).format(v.createdAt),
-      blQuantity,
-      allocatedDo,
+      totalQuantity,
+      allocatedWo,
       delivered,
-      balance: blQuantity - delivered,
+      balance: totalQuantity - delivered,
       workOrders: v.workOrders
         .map((w) => ({ id: w.id, seq: w.seq }))
         .sort((a, b) => a.seq - b.seq),

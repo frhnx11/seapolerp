@@ -25,6 +25,7 @@ export const roles = {
   PORT_WB: ac.newRole({}),
   PARTY_WB: ac.newRole({}),
   ACCOUNTANT: ac.newRole({}),
+  C_AND_F: ac.newRole({}),
 } as const;
 
 export type AppRole = keyof typeof roles;

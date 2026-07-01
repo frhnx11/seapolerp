@@ -33,7 +33,7 @@ const selectClass =
 const COLUMNS = [
   "Invoice #",
   "Date",
-  "Truck Owner",
+  "Discount Party",
   "Total Net Wt (MT)",
   "Rate (₹/MT)",
   "Amount",
@@ -46,6 +46,7 @@ export function WoInvoicesClient({
   wo,
   invoices,
   candidates,
+  discountParties,
   partyRate,
   todayIso,
   initialMonth,
@@ -53,6 +54,7 @@ export function WoInvoicesClient({
   wo: WoHeaderData;
   invoices: InvoiceListRow[];
   candidates: CandidateTrip[];
+  discountParties: { id: string; name: string }[];
   partyRate: number | null;
   todayIso: string;
   /** Current business month "YYYY-MM" (server-provided; seeds the navigator). */
@@ -64,16 +66,20 @@ export function WoInvoicesClient({
   } | null>(null);
   const [deleting, setDeleting] = useState<InvoiceListRow | null>(null);
   const [month, setMonth] = useState(initialMonth);
-  const [ownerFilter, setOwnerFilter] = useState("ALL");
+  const [partyFilter, setPartyFilter] = useState("ALL");
   const [search, setSearch] = useState("");
 
   const refresh = () => router.refresh();
 
-  const owners = useMemo(
+  const partyNames = useMemo(
     () =>
-      [...new Set(invoices.map((inv) => inv.truckOwner))].sort((a, b) =>
-        a.localeCompare(b),
-      ),
+      [
+        ...new Set(
+          invoices
+            .map((inv) => inv.discountPartyName)
+            .filter((n): n is string => n !== null),
+        ),
+      ].sort((a, b) => a.localeCompare(b)),
     [invoices],
   );
 
@@ -94,7 +100,8 @@ export function WoInvoicesClient({
     const q = search.trim().toLowerCase();
     return invoices.filter((inv) => {
       if (inv.date.slice(0, 7) !== month) return false;
-      if (ownerFilter !== "ALL" && inv.truckOwner !== ownerFilter) return false;
+      if (partyFilter !== "ALL" && inv.discountPartyName !== partyFilter)
+        return false;
       if (!q) return true;
       return (tripsByInvoice.get(inv.id) ?? []).some(
         (t) =>
@@ -102,11 +109,11 @@ export function WoInvoicesClient({
           t.vehicleNo.toLowerCase().includes(q),
       );
     });
-  }, [invoices, month, ownerFilter, search, tripsByInvoice]);
+  }, [invoices, month, partyFilter, search, tripsByInvoice]);
 
   const { visible, hasMore, shown, total, loadMore } = usePagination(
     filtered,
-    `${month}|${ownerFilter}|${search}`,
+    `${month}|${partyFilter}|${search}`,
   );
 
   return (
@@ -140,15 +147,15 @@ export function WoInvoicesClient({
             )}
           </div>
           <select
-            value={ownerFilter}
-            onChange={(e) => setOwnerFilter(e.target.value)}
-            aria-label="Filter by truck owner"
+            value={partyFilter}
+            onChange={(e) => setPartyFilter(e.target.value)}
+            aria-label="Filter by discount party"
             className={selectClass}
           >
-            <option value="ALL">All Truck Owners</option>
-            {owners.map((o) => (
-              <option key={o} value={o}>
-                {o}
+            <option value="ALL">All Discount Parties</option>
+            {partyNames.map((n) => (
+              <option key={n} value={n}>
+                {n}
               </option>
             ))}
           </select>
@@ -189,7 +196,7 @@ export function WoInvoicesClient({
                       {formatDate(inv.date)}
                     </td>
                     <td className="px-4 py-3.5 text-center text-sm text-gray-600">
-                      {inv.truckOwner}
+                      {inv.discountPartyName ?? "—"}
                     </td>
                     <td className="px-4 py-3.5 text-center text-sm text-gray-600">
                       {formatQty(inv.totalQty)}
@@ -280,6 +287,7 @@ export function WoInvoicesClient({
         <InvoiceWizardModal
           wo={wo}
           candidates={candidates}
+          discountParties={discountParties}
           partyRate={partyRate}
           todayIso={todayIso}
           invoice={wizard.invoice}

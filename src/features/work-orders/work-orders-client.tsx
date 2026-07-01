@@ -28,7 +28,7 @@ const COLUMNS = [
   "Cargo Type",
   "Supplier",
   "Party",
-  "DO Qty (MT)",
+  "WO Qty (MT)",
   "Delivered (MT)",
   "Balance (MT)",
   "Status",
@@ -86,7 +86,7 @@ export function WorkOrdersClient({
       if (partyFilter !== "ALL" && r.partyId !== partyFilter) return false;
       if (
         statusFilter !== "ALL" &&
-        workOrderStatus(r.doQuantity, r.delivered) !== statusFilter
+        workOrderStatus(r.woQuantity, r.delivered) !== statusFilter
       ) {
         return false;
       }
@@ -221,7 +221,7 @@ export function WorkOrdersClient({
               {visible.length > 0 ? (
                 visible.map((r) => {
                   const pill =
-                    STATUS_META[workOrderStatus(r.doQuantity, r.delivered)];
+                    STATUS_META[workOrderStatus(r.woQuantity, r.delivered)];
                   return (
                     <tr
                       key={r.id}
@@ -247,7 +247,7 @@ export function WorkOrdersClient({
                         {r.partyName}
                       </td>
                       <td className="px-4 py-3.5 text-sm text-gray-600">
-                        {formatQty(r.doQuantity)}
+                        {formatQty(r.woQuantity)}
                       </td>
                       <td className="px-4 py-3.5 text-sm text-gray-600">
                         {formatQty(r.delivered)}

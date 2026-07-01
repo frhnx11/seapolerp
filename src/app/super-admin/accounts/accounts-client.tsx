@@ -25,6 +25,7 @@ const ROLE_BADGE: Record<string, string> = {
   PORT_WB: "bg-cyan-50 text-cyan-700 border-cyan-200",
   PARTY_WB: "bg-amber-50 text-amber-700 border-amber-200",
   ACCOUNTANT: "bg-green-50 text-green-700 border-green-200",
+  C_AND_F: "bg-purple-50 text-purple-700 border-purple-200",
 };
 
 const FALLBACK_BADGE = "bg-gray-50 text-gray-700 border-gray-200";

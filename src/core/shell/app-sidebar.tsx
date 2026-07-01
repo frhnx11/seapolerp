@@ -9,6 +9,7 @@ import {
   Database,
   FileText,
   LayoutDashboard,
+  PackageCheck,
   Settings,
   Ship,
   Truck,
@@ -35,6 +36,7 @@ const ICONS: Record<NavKey, LucideIcon> = {
   invoices: FileText,
   alerts: AlertTriangle,
   vessels: Ship,
+  deliveryOrders: PackageCheck,
 };
 
 function initialsOf(name: string) {

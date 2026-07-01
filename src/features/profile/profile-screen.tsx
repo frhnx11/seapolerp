@@ -24,6 +24,7 @@ const ROLE_LABEL: Record<string, string> = {
   PORT_WB: "Port Weighbridge",
   PARTY_WB: "Party Weighbridge",
   ACCOUNTANT: "Accountant",
+  C_AND_F: "C&F",
 };
 
 const MONTHS = [

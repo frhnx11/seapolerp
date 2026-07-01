@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+// The edit-window rule + timestamp formatter are flow-agnostic; the canonical
+// home is core. Re-exported here so existing work-order call sites are unchanged.
+export {
+  EDIT_WINDOW_MS,
+  type EditLock,
+  evaluateEditLock,
+  formatStamp,
+} from "@/core/edit-window";
+
 /** Trip statuses in stage order — index = how far the trip has progressed. */
 export const TRUCK_ORDER_STATUSES = [
   "TARE_RECORDED",
@@ -14,71 +23,10 @@ export function truckOrderStatusIndex(status: string): number {
   return i === -1 ? 0 : i;
 }
 
-// ---- Edit window ----
-
-/**
- * Each recorded value (tare, loading site, gross, net received) is editable for
- * this long after its *first* entry. After that only an admin can change it, and
- * only until the trip is invoiced.
- */
-export const EDIT_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
-
-export type EditLock = { canEdit: boolean; reason: string | null };
-
-/**
- * The single rule governing whether a value may be edited, shared by the server
- * actions (authoritative) and the popups (mirrors it for the UI).
- *
- * - `firstEnteredAt` is the immutable first-entry anchor; `null` means the value
- *   hasn't been entered yet, so this is a first entry — always allowed.
- * - Invoiced trips are locked for everyone (the weight is billed).
- * - Admins have no time limit (until invoiced); everyone else gets `EDIT_WINDOW_MS`.
- */
-export function evaluateEditLock(p: {
-  firstEnteredAt: string | Date | null;
-  isAdmin: boolean;
-  invoiced: boolean;
-  now: number;
-}): EditLock {
-  if (p.invoiced) {
-    return {
-      canEdit: false,
-      reason: "This trip is on an invoice — edit or delete that invoice first.",
-    };
-  }
-  if (p.isAdmin) return { canEdit: true, reason: null };
-  if (p.firstEnteredAt == null) return { canEdit: true, reason: null };
-  const at =
-    typeof p.firstEnteredAt === "string"
-      ? Date.parse(p.firstEnteredAt)
-      : p.firstEnteredAt.getTime();
-  if (p.now <= at + EDIT_WINDOW_MS) return { canEdit: true, reason: null };
-  return {
-    canEdit: false,
-    reason:
-      "The 30-minute editing window has closed — ask an admin to make changes.",
-  };
-}
-
 /** Truck order number, e.g. 1 -> "TO-#001". */
 export function formatTruckOrderNo(seq: number): string {
   return `TO-#${String(seq).padStart(3, "0")}`;
 }
-
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
 
 /**
  * Net sent (gross − tare) and net received should agree within this margin (MT);
@@ -103,21 +51,12 @@ export function isNetDiscrepancy(
   return d !== null && d - NET_TOLERANCE_MT > 1e-9;
 }
 
-/** ISO timestamp -> "DD Mon HH:mm" (display only, local time). */
-export function formatStamp(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${String(d.getDate()).padStart(2, "0")} ${MONTHS[d.getMonth()]} ${hh}:${mm}`;
-}
-
 /** A truck available for a new trip (in the global allotted pool, not blocked). */
 export type TruckOption = { id: string; vehicleNo: string };
 
 /**
  * A work order offered in the gross-stage selector. Carries the quantities so the
- * picker can show the remaining balance; `balance = doQuantity - delivered`.
+ * picker can show the remaining balance; `balance = woQuantity - delivered`.
  */
 export type WorkOrderOption = {
   id: string;
@@ -126,7 +65,7 @@ export type WorkOrderOption = {
   cargoTypeName: string;
   supplierName: string;
   partyName: string;
-  doQuantity: number;
+  woQuantity: number;
   delivered: number;
 };
 

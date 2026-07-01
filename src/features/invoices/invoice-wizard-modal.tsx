@@ -8,7 +8,6 @@ import { usePagination } from "@/components/use-pagination";
 import { formatInr, formatQty } from "@/core/format";
 import { formatTruckOrderNo } from "@/features/work-orders/truck-order-lib";
 import { type WoHeaderData } from "@/features/work-orders/wo-header";
-import { formatWoNumber } from "@/features/work-orders/work-order";
 
 import { createInvoice, updateInvoice } from "./invoice-actions";
 import { InvoiceDocView } from "./invoice-doc";
@@ -18,7 +17,6 @@ import {
   formatInvoiceNo,
   type InvoiceListRow,
   lowestNet,
-  netWeightDiff,
   totalLowestNet,
 } from "./invoice-lib";
 
@@ -27,6 +25,7 @@ const TRIP_COLUMNS = [
   "TO#",
   "VT #",
   "Vehicle No",
+  "Owner",
   "Net Sent (MT)",
   "Net Received (MT)",
   "Lowest Net (MT)",
@@ -44,13 +43,15 @@ function sameSet(a: Set<string>, b: Set<string>) {
 }
 
 /**
- * 3-step invoice wizard: (1) date + truck company + trip checklist,
+ * 3-step invoice wizard: (1) date + discount party + trip checklist,
  * (2) discount %, (3) full preview → create / save. Also edits an existing
- * invoice (prefilled; recalculates with the invoice's frozen rate).
+ * invoice (prefilled; recalculates with the invoice's frozen rate). One invoice
+ * may mix trips of any truck owner; it is simply billed to a discount party.
  */
 export function InvoiceWizardModal({
   wo,
   candidates,
+  discountParties,
   partyRate,
   todayIso,
   invoice,
@@ -59,6 +60,8 @@ export function InvoiceWizardModal({
 }: {
   wo: WoHeaderData;
   candidates: CandidateTrip[];
+  /** Discount-party master rows for the (required) recipient dropdown. */
+  discountParties: { id: string; name: string }[];
   /** The party's current ₹/MT rate (used for NEW invoices); null = not set. */
   partyRate: number | null;
   todayIso: string;
@@ -78,7 +81,15 @@ export function InvoiceWizardModal({
   );
   const [step, setStep] = useState(0);
   const [date, setDate] = useState(invoice?.date ?? todayIso);
-  const [truckOwner, setTruckOwner] = useState(invoice?.truckOwner ?? "");
+  const [vendorInvoiceNumber, setVendorInvoiceNumber] = useState(
+    invoice?.vendorInvoiceNumber ?? "",
+  );
+  const [vendorInvoiceDate, setVendorInvoiceDate] = useState(
+    invoice?.vendorInvoiceDate ?? "",
+  );
+  const [discountPartyId, setDiscountPartyId] = useState(
+    invoice?.discountPartyId ?? "",
+  );
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(invoice?.tripIds ?? []),
   );
@@ -92,33 +103,16 @@ export function InvoiceWizardModal({
   const [error, setError] = useState("");
 
   /**
-   * Owner companies that have at least one trip this wizard may use: owners
-   * of free trips, plus the invoice's stored owner (under which its claimed
-   * trips are offered — see `eligible`).
-   */
-  const owners = useMemo(() => {
-    const set = new Set<string>();
-    for (const t of candidates) {
-      if (t.invoiceId === null) set.add(t.owner);
-    }
-    if (invoice) set.add(invoice.truckOwner);
-    return [...set].sort((a, b) => a.localeCompare(b));
-  }, [candidates, invoice]);
-
-  /**
-   * The chosen owner's trips this invoice may include: free trips matched by
-   * the truck's current owner name, plus — while the owner selection equals
-   * the invoice's stored owner — its own claimed trips matched by invoice id
-   * (so a renamed truck owner can't strand them; mirrors loadBillableTrips).
+   * Every trip this invoice may include — regardless of truck owner: free
+   * trips, plus (when editing) this invoice's own claimed trips matched by id.
+   * The discount party is just the recipient and never filters the list.
    */
   const eligible = useMemo(
     () =>
-      candidates.filter((t) =>
-        t.invoiceId === null
-          ? t.owner === truckOwner
-          : t.invoiceId === invoice?.id && truckOwner === invoice.truckOwner,
+      candidates.filter(
+        (t) => t.invoiceId === null || t.invoiceId === invoice?.id,
       ),
-    [candidates, truckOwner, invoice],
+    [candidates, invoice],
   );
 
   const filteredTrips = useMemo(() => {
@@ -128,14 +122,16 @@ export function InvoiceWizardModal({
       (t) =>
         formatTruckOrderNo(t.seq).toLowerCase().includes(q) ||
         (t.vtNumber?.toLowerCase().includes(q) ?? false) ||
-        t.vehicleNo.toLowerCase().includes(q),
+        t.vehicleNo.toLowerCase().includes(q) ||
+        t.owner.toLowerCase().includes(q),
     );
   }, [eligible, search]);
 
-  const { visible, hasMore, loadMore } = usePagination(
-    filteredTrips,
-    `${truckOwner}|${search}`,
-  );
+  const { visible, hasMore, loadMore } = usePagination(filteredTrips, search);
+
+  /** The selected discount party's name, for the preview/document. */
+  const discountPartyName =
+    discountParties.find((d) => d.id === discountPartyId)?.name ?? "";
 
   const selectedTrips = useMemo(
     () => eligible.filter((t) => selected.has(t.id)),
@@ -151,17 +147,26 @@ export function InvoiceWizardModal({
 
   const dirty = isEdit
     ? date !== invoice.date ||
-      truckOwner !== invoice.truckOwner ||
+      vendorInvoiceNumber.trim() !== (invoice.vendorInvoiceNumber ?? "") ||
+      vendorInvoiceDate !== (invoice.vendorInvoiceDate ?? "") ||
+      discountPartyId !== (invoice.discountPartyId ?? "") ||
       !sameSet(selected, initialSelected) ||
       pct !== invoice.discountPct ||
       remarks.trim() !== (invoice.remarks ?? "")
-    : truckOwner !== "" ||
+    : vendorInvoiceNumber.trim() !== "" ||
+      vendorInvoiceDate !== "" ||
+      discountPartyId !== "" ||
       selected.size > 0 ||
       discountPct.trim() !== "" ||
       remarks.trim() !== "";
 
   const step1Valid =
-    Boolean(date) && truckOwner !== "" && selected.size > 0 && rate !== null;
+    Boolean(date) &&
+    vendorInvoiceNumber.trim() !== "" &&
+    Boolean(vendorInvoiceDate) &&
+    discountPartyId !== "" &&
+    selected.size > 0 &&
+    rate !== null;
 
   function toggle(tripId: string) {
     setSelected((prev) => {
@@ -170,12 +175,6 @@ export function InvoiceWizardModal({
       else next.add(tripId);
       return next;
     });
-  }
-
-  function changeOwner(owner: string) {
-    setTruckOwner(owner);
-    setSelected(new Set());
-    setSearch("");
   }
 
   function requestClose() {
@@ -188,7 +187,9 @@ export function InvoiceWizardModal({
     setSaving(true);
     const input = {
       date,
-      truckOwner,
+      vendorInvoiceNumber: vendorInvoiceNumber.trim(),
+      vendorInvoiceDate,
+      discountPartyId,
       tripIds: [...selected],
       discountPct: pct,
       remarks: remarks.trim(),
@@ -272,26 +273,59 @@ export function InvoiceWizardModal({
                   className={inputClass}
                 />
               </div>
-              <div className="min-w-64">
+              <div className="min-w-56">
                 <label
-                  htmlFor="inv-owner"
+                  htmlFor="inv-vendor-no"
                   className="mb-1 block text-sm font-medium text-gray-700"
                 >
-                  Truck Company<span className="text-red-500"> *</span>
+                  Vendor Invoice Number<span className="text-red-500"> *</span>
+                </label>
+                <input
+                  id="inv-vendor-no"
+                  type="text"
+                  value={vendorInvoiceNumber}
+                  onChange={(e) => setVendorInvoiceNumber(e.target.value)}
+                  required
+                  placeholder="e.g. 5844 & 5847"
+                  className={`${inputClass} w-full`}
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="inv-vendor-date"
+                  className="mb-1 block text-sm font-medium text-gray-700"
+                >
+                  Vendor Invoice Date<span className="text-red-500"> *</span>
+                </label>
+                <input
+                  id="inv-vendor-date"
+                  type="date"
+                  value={vendorInvoiceDate}
+                  onChange={(e) => setVendorInvoiceDate(e.target.value)}
+                  required
+                  className={inputClass}
+                />
+              </div>
+              <div className="min-w-64">
+                <label
+                  htmlFor="inv-discount-party"
+                  className="mb-1 block text-sm font-medium text-gray-700"
+                >
+                  Discount Party<span className="text-red-500"> *</span>
                 </label>
                 <select
-                  id="inv-owner"
-                  value={truckOwner}
-                  onChange={(e) => changeOwner(e.target.value)}
+                  id="inv-discount-party"
+                  value={discountPartyId}
+                  onChange={(e) => setDiscountPartyId(e.target.value)}
                   required
                   className={`${inputClass} w-full`}
                 >
                   <option value="" disabled>
-                    Select truck company
+                    Select discount party
                   </option>
-                  {owners.map((o) => (
-                    <option key={o} value={o}>
-                      {o}
+                  {discountParties.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
                     </option>
                   ))}
                 </select>
@@ -305,7 +339,7 @@ export function InvoiceWizardModal({
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by TO#, VT# or vehicle no..."
+                  placeholder="Search by TO#, VT#, vehicle or owner..."
                   className={`${inputClass} w-full border-gray-200 pl-10`}
                 />
               </div>
@@ -319,121 +353,108 @@ export function InvoiceWizardModal({
             )}
 
             <div className="min-h-0 flex-1 overflow-y-auto">
-              {truckOwner === "" ? (
-                <div className="px-6 py-16 text-center">
-                  <FileText size={48} className="mx-auto mb-4 text-gray-200" />
-                  <h3 className="mb-1 text-lg font-semibold text-gray-900">
-                    {owners.length === 0
-                      ? "No billable trips yet"
-                      : "Select a truck company"}
-                  </h3>
-                  <p className="text-gray-500">
-                    {owners.length === 0
-                      ? "Trips appear here once they are completed at the port, received by the party, and not yet invoiced."
-                      : "Each invoice pays one company — its billable trips will show here."}
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <table className="w-full">
-                    <thead className="sticky top-0 z-10">
-                      <tr className="border-b border-gray-100 bg-gray-50">
-                        {TRIP_COLUMNS.map((h, i) => (
-                          <th
-                            key={`${h}-${i}`}
-                            className={`px-4 py-3 text-left text-xs font-semibold tracking-wider text-gray-500 uppercase ${
-                              i === 0 ? "w-12" : ""
+              <>
+                <table className="w-full">
+                  <thead className="sticky top-0 z-10">
+                    <tr className="border-b border-gray-100 bg-gray-50">
+                      {TRIP_COLUMNS.map((h, i) => (
+                        <th
+                          key={`${h}-${i}`}
+                          className={`px-4 py-3 text-left text-xs font-semibold tracking-wider text-gray-500 uppercase ${
+                            i === 0 ? "w-12" : ""
+                          }`}
+                        >
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filteredTrips.length > 0 ? (
+                      visible.map((t) => {
+                        const isSelected = selected.has(t.id);
+                        return (
+                          <tr
+                            key={t.id}
+                            onClick={() => toggle(t.id)}
+                            className={`cursor-pointer transition-colors hover:bg-gray-50 ${
+                              isSelected ? "bg-blue-50/50" : ""
                             }`}
                           >
-                            {h}
-                          </th>
-                        ))}
+                            <td className="px-4 py-3">
+                              <span
+                                role="checkbox"
+                                aria-checked={isSelected}
+                                aria-label={`Select ${formatTruckOrderNo(t.seq)}`}
+                                className={`flex h-5 w-5 items-center justify-center rounded border transition-colors ${
+                                  isSelected
+                                    ? "border-[#0483ca] bg-[#0483ca]"
+                                    : "border-gray-300 bg-white"
+                                }`}
+                              >
+                                {isSelected && (
+                                  <Check size={14} className="text-white" />
+                                )}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm font-semibold whitespace-nowrap text-gray-900">
+                              {formatTruckOrderNo(t.seq)}
+                            </td>
+                            <td className="px-4 py-3 text-sm font-medium whitespace-nowrap text-gray-900">
+                              {t.vtNumber ?? "—"}
+                            </td>
+                            <td className="px-4 py-3 text-sm whitespace-nowrap text-gray-600">
+                              {t.vehicleNo}
+                            </td>
+                            <td className="px-4 py-3 text-sm whitespace-nowrap text-gray-600">
+                              {t.owner}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">
+                              {formatQty(t.netWeight)}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">
+                              {formatQty(t.netWeightReceived)}
+                            </td>
+                            <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                              {formatQty(lowestNet(t))}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td
+                          colSpan={TRIP_COLUMNS.length}
+                          className="px-6 py-16 text-center"
+                        >
+                          <FileText
+                            size={48}
+                            className="mx-auto mb-4 text-gray-200"
+                          />
+                          <h3 className="mb-1 text-lg font-semibold text-gray-900">
+                            No billable trips found
+                          </h3>
+                          <p className="text-gray-500">
+                            {eligible.length === 0
+                              ? "This work order has no completed, received, un-invoiced trips yet."
+                              : "Try a different search."}
+                          </p>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {filteredTrips.length > 0 ? (
-                        visible.map((t) => {
-                          const isSelected = selected.has(t.id);
-                          return (
-                            <tr
-                              key={t.id}
-                              onClick={() => toggle(t.id)}
-                              className={`cursor-pointer transition-colors hover:bg-gray-50 ${
-                                isSelected ? "bg-blue-50/50" : ""
-                              }`}
-                            >
-                              <td className="px-4 py-3">
-                                <span
-                                  role="checkbox"
-                                  aria-checked={isSelected}
-                                  aria-label={`Select ${formatTruckOrderNo(t.seq)}`}
-                                  className={`flex h-5 w-5 items-center justify-center rounded border transition-colors ${
-                                    isSelected
-                                      ? "border-[#0483ca] bg-[#0483ca]"
-                                      : "border-gray-300 bg-white"
-                                  }`}
-                                >
-                                  {isSelected && (
-                                    <Check size={14} className="text-white" />
-                                  )}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-sm font-semibold whitespace-nowrap text-gray-900">
-                                {formatTruckOrderNo(t.seq)}
-                              </td>
-                              <td className="px-4 py-3 text-sm font-medium whitespace-nowrap text-gray-900">
-                                {t.vtNumber ?? "—"}
-                              </td>
-                              <td className="px-4 py-3 text-sm whitespace-nowrap text-gray-600">
-                                {t.vehicleNo}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-600">
-                                {formatQty(t.netWeight)}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-600">
-                                {formatQty(t.netWeightReceived)}
-                              </td>
-                              <td className="px-4 py-3 text-sm font-semibold text-gray-900">
-                                {formatQty(lowestNet(t))}
-                              </td>
-                            </tr>
-                          );
-                        })
-                      ) : (
-                        <tr>
-                          <td
-                            colSpan={TRIP_COLUMNS.length}
-                            className="px-6 py-16 text-center"
-                          >
-                            <FileText
-                              size={48}
-                              className="mx-auto mb-4 text-gray-200"
-                            />
-                            <h3 className="mb-1 text-lg font-semibold text-gray-900">
-                              No billable trips found
-                            </h3>
-                            <p className="text-gray-500">
-                              {eligible.length === 0
-                                ? "This company has no completed, received, un-invoiced trips on this work order."
-                                : "Try a different search."}
-                            </p>
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                  {hasMore && (
-                    <div className="flex justify-center py-4">
-                      <button
-                        onClick={loadMore}
-                        className="rounded-xl border border-gray-200 bg-white px-6 py-2 font-medium text-gray-700 transition-colors hover:bg-gray-50"
-                      >
-                        Load More
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
+                    )}
+                  </tbody>
+                </table>
+                {hasMore && (
+                  <div className="flex justify-center py-4">
+                    <button
+                      onClick={loadMore}
+                      className="rounded-xl border border-gray-200 bg-white px-6 py-2 font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                    >
+                      Load More
+                    </button>
+                  </div>
+                )}
+              </>
             </div>
           </>
         )}
@@ -526,24 +547,14 @@ export function InvoiceWizardModal({
                     ? formatInvoiceNo(invoice.seq)
                     : "Assigned on save",
                   date,
-                  truckOwner,
+                  vesselName: wo.vesselName,
+                  discountPartyName,
+                  vendorInvoiceNumber: vendorInvoiceNumber.trim(),
+                  vendorInvoiceDate,
                   rate,
+                  totalQty,
                   discountPct: pctValid ? pct : 0,
                   remarks: remarks.trim() || null,
-                  workOrder: {
-                    woNumber: formatWoNumber(wo.seq),
-                    vesselName: wo.vesselName,
-                    supplierName: wo.supplierName,
-                    partyName: wo.partyName,
-                    cargoTypeName: wo.cargoTypeName,
-                  },
-                  trips: selectedTrips.map((t) => ({
-                    id: t.id,
-                    vtNumber: t.vtNumber,
-                    vehicleNo: t.vehicleNo,
-                    qty: lowestNet(t),
-                    diff: netWeightDiff(t),
-                  })),
                 }}
               />
             </div>

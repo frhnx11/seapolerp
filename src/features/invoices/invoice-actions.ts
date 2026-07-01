@@ -17,7 +17,11 @@ import {
 const requireAccounts = () => requireActionRole("ADMIN", "ACCOUNTANT");
 
 function revalidateInvoicePaths(workOrderId: string) {
+  // The per-WO invoice lists (both portals) plus the two all-invoices lists.
   revalidatePath(`/accountant/work-orders/${workOrderId}/invoices`);
+  revalidatePath(`/admin/work-orders/${workOrderId}/invoices`);
+  revalidatePath("/accountant/invoices");
+  revalidatePath("/admin/invoices");
 }
 
 function toMessage(error: unknown): string {
@@ -34,17 +38,15 @@ function toMessage(error: unknown): string {
 
 /**
  * Loads the selected trips and enforces every invoicing rule in one place:
- * same work order, settled (COMPLETED + received), and either a free trip of
- * the chosen owner's trucks or a trip already on `allowInvoiceId` (the
- * invoice being edited — matched by id, not owner name, so renaming a truck
- * owner can never strand an invoice's own trips). Throws when any selected
- * trip fails a rule.
+ * same work order, settled (COMPLETED + received), and either still free or
+ * already on `allowInvoiceId` (the invoice being edited — matched by id). One
+ * invoice may mix trips of any truck owner. Throws when any selected trip
+ * fails a rule.
  */
 async function loadBillableTrips(
   tx: Prisma.TransactionClient,
   workOrderId: string,
   tripIds: string[],
-  truckOwner: string,
   allowInvoiceId: string | null,
 ) {
   const trips = await tx.truckOrder.findMany({
@@ -54,7 +56,7 @@ async function loadBillableTrips(
       status: "COMPLETED",
       netWeightReceived: { not: null },
       OR: [
-        { invoiceId: null, truck: { owner: { name: truckOwner } } },
+        { invoiceId: null },
         ...(allowInvoiceId ? [{ invoiceId: allowInvoiceId }] : []),
       ],
     },
@@ -83,7 +85,15 @@ export async function createInvoice(workOrderId: string, input: InvoiceInput) {
         error: parsed.error.issues[0]?.message ?? "Invalid input",
       };
     }
-    const { date, truckOwner, tripIds, discountPct, remarks } = parsed.data;
+    const {
+      date,
+      vendorInvoiceNumber,
+      vendorInvoiceDate,
+      discountPartyId,
+      tripIds,
+      discountPct,
+      remarks,
+    } = parsed.data;
 
     const created = await prisma.$transaction(
       async (tx) => {
@@ -99,13 +109,13 @@ export async function createInvoice(workOrderId: string, input: InvoiceInput) {
         }
         const rate = workOrder.party.rate.toNumber();
 
-        const trips = await loadBillableTrips(
-          tx,
-          workOrderId,
-          tripIds,
-          truckOwner,
-          null,
-        );
+        const discountParty = await tx.discountParty.findUnique({
+          where: { id: discountPartyId },
+          select: { id: true },
+        });
+        if (!discountParty) throw new Error("Discount party not found");
+
+        const trips = await loadBillableTrips(tx, workOrderId, tripIds, null);
         const totalQty = totalLowestNet(trips);
         const { amount, finalAmount } = computeInvoiceTotals(
           totalQty,
@@ -117,7 +127,9 @@ export async function createInvoice(workOrderId: string, input: InvoiceInput) {
           data: {
             workOrderId,
             date,
-            truckOwner,
+            vendorInvoiceNumber,
+            vendorInvoiceDate,
+            discountPartyId,
             rate,
             totalQty,
             amount,
@@ -167,32 +179,38 @@ export async function updateInvoice(invoiceId: string, input: InvoiceInput) {
         error: parsed.error.issues[0]?.message ?? "Invalid input",
       };
     }
-    const { date, truckOwner, tripIds, discountPct, remarks } = parsed.data;
+    const {
+      date,
+      vendorInvoiceNumber,
+      vendorInvoiceDate,
+      discountPartyId,
+      tripIds,
+      discountPct,
+      remarks,
+    } = parsed.data;
 
     const updated = await prisma.$transaction(
       async (tx) => {
         const invoice = await tx.invoice.findUnique({
           where: { id: invoiceId },
-          select: {
-            id: true,
-            seq: true,
-            workOrderId: true,
-            rate: true,
-            truckOwner: true,
-          },
+          select: { id: true, seq: true, workOrderId: true, rate: true },
         });
         if (!invoice) throw new Error("Invoice not found");
         const rate = invoice.rate.toNumber();
 
-        // The invoice's own trips stay claimable only while the owner
-        // selection is unchanged — switching owners must start from free
-        // trips, so one invoice can never mix two owners' trucks.
+        const discountParty = await tx.discountParty.findUnique({
+          where: { id: discountPartyId },
+          select: { id: true },
+        });
+        if (!discountParty) throw new Error("Discount party not found");
+
+        // The invoice's own trips stay claimable (matched by id); any owner's
+        // free trips may also be added.
         const trips = await loadBillableTrips(
           tx,
           invoice.workOrderId,
           tripIds,
-          truckOwner,
-          truckOwner === invoice.truckOwner ? invoiceId : null,
+          invoiceId,
         );
 
         // Release the current set, then claim the new one (count-checked).
@@ -220,7 +238,9 @@ export async function updateInvoice(invoiceId: string, input: InvoiceInput) {
           where: { id: invoiceId },
           data: {
             date,
-            truckOwner,
+            vendorInvoiceNumber,
+            vendorInvoiceDate,
+            discountPartyId,
             totalQty,
             amount,
             discountPct,

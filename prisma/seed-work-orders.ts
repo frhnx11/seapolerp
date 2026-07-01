@@ -4,18 +4,18 @@ import { prisma } from "@/core/db";
 import { SAMPLE_VESSELS } from "@/features/super-admin/sample-constants";
 
 /**
- * Seeds sample vessels and work orders for testing. Vessels carry the BL (total
- * goods in the ship, sized with headroom above the allocated DOs so increases
- * can be tested); each work order takes a DO quantity from its vessel. Statuses
+ * Seeds sample vessels and work orders for testing. Vessels carry the total
+ * goods in the ship, sized with headroom above the allocated WOs so increases
+ * can be tested; each work order takes a WO quantity from its vessel. Statuses
  * are mixed via `delivered`: 0 = Pending, partial = Partial, full = Completed;
  * dates are spread over the past week. Idempotent — skips if already seeded.
  */
 
-// name, BL quantity (MT) — BL > Σ DO below, leaving room to raise DOs. Shared
-// vessel list lives in `@/features/super-admin/sample-constants`.
+// name, total quantity (MT) — total > Σ WO below, leaving room to raise WO qty.
+// Shared vessel list lives in `@/features/super-admin/sample-constants`.
 const VESSELS = SAMPLE_VESSELS;
 
-// vessel, supplier index, party index, DO qty (MT), delivered (MT), days ago
+// vessel, supplier index, party index, WO qty (MT), delivered (MT), days ago
 const SAMPLE_ORDERS: [string, number, number, number, number, number][] = [
   // MV Ocean Star carries goods for several parties
   ["MV Ocean Star", 0, 1, 12_500, 0, 1], // Pending
@@ -75,7 +75,7 @@ async function main() {
   }
 
   await prisma.vessel.createMany({
-    data: VESSELS.map(([name, blQuantity]) => ({ name, blQuantity })),
+    data: VESSELS.map(([name, totalQuantity]) => ({ name, totalQuantity })),
     skipDuplicates: true,
   });
   const vessels = await prisma.vessel.findMany({
@@ -88,7 +88,7 @@ async function main() {
     vesselName,
     sIdx,
     pIdx,
-    doQty,
+    woQty,
     delivered,
     daysAgo,
   ] of SAMPLE_ORDERS) {
@@ -102,7 +102,7 @@ async function main() {
         cargoTypeId: cargoTypes[(orderIndex * 7 + 3) % cargoTypes.length].id,
         supplierId: suppliers[sIdx % suppliers.length].id,
         partyId: parties[pIdx % parties.length].id,
-        doQuantity: doQty,
+        woQuantity: woQty,
         delivered,
         createdByName: "Super Admin",
       },

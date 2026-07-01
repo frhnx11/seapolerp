@@ -88,6 +88,29 @@ export function getTodayIso(): string {
   }).format(new Date());
 }
 
+/**
+ * The currently-running "business day" as YYYY-MM-DD. The business day rolls
+ * over at 06:00 IST (report windows run 06:00 → 06:00), so between 00:00 and
+ * 06:00 IST we're still inside the previous calendar day's window. Use this
+ * (not getTodayIso) to default report date pickers.
+ */
+export function getBusinessDayIso(): string {
+  const ymd = getTodayIso();
+  const hour = Number(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: BUSINESS_TIME_ZONE,
+      hourCycle: "h23",
+      hour: "2-digit",
+    }).format(new Date()),
+  );
+  if (hour >= 6) return ymd;
+  // Before 06:00 IST → the running window started on the previous calendar day.
+  const [y, m, d] = ymd.split("-").map(Number);
+  const prev = new Date(Date.UTC(y, m - 1, d));
+  prev.setUTCDate(prev.getUTCDate() - 1);
+  return prev.toISOString().slice(0, 10);
+}
+
 /** A YYYY-MM-DD validity date is expired once it is before today (valid through that day). */
 export function isExpired(date: string, todayIso: string): boolean {
   return date < todayIso;

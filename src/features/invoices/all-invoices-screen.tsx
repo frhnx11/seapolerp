@@ -12,6 +12,7 @@ export async function AllInvoicesScreen({ date }: { date?: string }) {
     orderBy: { seq: "desc" },
     include: {
       workOrder: { select: { seq: true } },
+      discountParty: { select: { name: true } },
       truckOrders: {
         select: { vtNumber: true, truck: { select: { vehicleNo: true } } },
       },
@@ -23,7 +24,7 @@ export async function AllInvoicesScreen({ date }: { date?: string }) {
     seq: inv.seq,
     woSeq: inv.workOrder.seq,
     date: inv.date,
-    truckOwner: inv.truckOwner,
+    discountPartyName: inv.discountParty?.name ?? null,
     rate: inv.rate.toNumber(),
     totalQty: inv.totalQty.toNumber(),
     amount: inv.amount.toNumber(),

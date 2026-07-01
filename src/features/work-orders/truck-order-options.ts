@@ -25,7 +25,7 @@ export async function fetchWorkOrderOptions(): Promise<WorkOrderOption[]> {
     cargoTypeName: w.cargoType.name,
     supplierName: w.supplier.name,
     partyName: w.party.name,
-    doQuantity: w.doQuantity.toNumber(),
+    woQuantity: w.woQuantity.toNumber(),
     delivered: w.delivered.toNumber(),
   }));
 }

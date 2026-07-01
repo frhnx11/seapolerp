@@ -15,11 +15,11 @@ export type WoHeaderData = {
   seq: number;
   date: string;
   vesselName: string;
-  vesselBl: number;
+  vesselTotal: number;
   cargoTypeName: string;
   supplierName: string;
   partyName: string;
-  doQuantity: number;
+  woQuantity: number;
   delivered: number;
   balance: number;
   bePermissionNo: string | null;
@@ -35,7 +35,7 @@ export async function fetchWoHeader(id: string): Promise<WoHeaderData | null> {
   const workOrder = await prisma.workOrder.findUnique({
     where: { id },
     include: {
-      vessel: { select: { name: true, blQuantity: true } },
+      vessel: { select: { name: true, totalQuantity: true } },
       cargoType: { select: { name: true } },
       supplier: { select: { name: true } },
       party: { select: { name: true } },
@@ -48,13 +48,13 @@ export async function fetchWoHeader(id: string): Promise<WoHeaderData | null> {
     seq: workOrder.seq,
     date: workOrder.date,
     vesselName: workOrder.vessel.name,
-    vesselBl: workOrder.vessel.blQuantity.toNumber(),
+    vesselTotal: workOrder.vessel.totalQuantity.toNumber(),
     cargoTypeName: workOrder.cargoType.name,
     supplierName: workOrder.supplier.name,
     partyName: workOrder.party.name,
-    doQuantity: workOrder.doQuantity.toNumber(),
+    woQuantity: workOrder.woQuantity.toNumber(),
     delivered: workOrder.delivered.toNumber(),
-    balance: workOrder.doQuantity.minus(workOrder.delivered).toNumber(),
+    balance: workOrder.woQuantity.minus(workOrder.delivered).toNumber(),
     bePermissionNo: workOrder.bePermissionNo,
     eaIaNo: workOrder.eaIaNo,
     eaIaDate: workOrder.eaIaDate,
@@ -82,7 +82,7 @@ function HeaderItem({ label, value }: { label: string; value: string }) {
 /** The common work-order info header shown on the WO hub and its subpages. */
 export function WoHeader({ workOrder }: { workOrder: WoHeaderData }) {
   const pill =
-    STATUS_META[workOrderStatus(workOrder.doQuantity, workOrder.delivered)];
+    STATUS_META[workOrderStatus(workOrder.woQuantity, workOrder.delivered)];
 
   return (
     <div className="rounded-2xl border border-gray-100 bg-white p-6">
@@ -105,12 +105,12 @@ export function WoHeader({ workOrder }: { workOrder: WoHeaderData }) {
         <HeaderItem label="Supplier" value={workOrder.supplierName} />
         <HeaderItem label="Party" value={workOrder.partyName} />
         <HeaderItem
-          label="Vessel BL (MT)"
-          value={formatQty(workOrder.vesselBl)}
+          label="Vessel Total (MT)"
+          value={formatQty(workOrder.vesselTotal)}
         />
         <HeaderItem
-          label="DO Qty (MT)"
-          value={formatQty(workOrder.doQuantity)}
+          label="WO Qty (MT)"
+          value={formatQty(workOrder.woQuantity)}
         />
         <HeaderItem
           label="Delivered (MT)"

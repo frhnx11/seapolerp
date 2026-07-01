@@ -16,8 +16,8 @@ import { VesselFormModal } from "./vessel-form-modal";
 const COLUMNS = [
   "Vessel ID",
   "Name",
-  "BL Qty (MT)",
-  "Allocated DO (MT)",
+  "Total Qty (MT)",
+  "Allocated WO (MT)",
   "Available (MT)",
   "Actions",
 ];
@@ -120,10 +120,10 @@ export function VesselsClient({ vessels }: { vessels: VesselRow[] }) {
                       {v.name}
                     </td>
                     <td className="px-4 py-3.5 text-sm text-gray-600">
-                      {formatQty(v.blQuantity)}
+                      {formatQty(v.totalQuantity)}
                     </td>
                     <td className="px-4 py-3.5 text-sm text-gray-600">
-                      {formatQty(v.allocatedDo)}
+                      {formatQty(v.allocatedWo)}
                     </td>
                     <td
                       className={`px-4 py-3.5 text-sm font-medium ${

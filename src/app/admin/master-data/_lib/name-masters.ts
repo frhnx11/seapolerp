@@ -4,9 +4,11 @@ import { z } from "zod";
 export type NameMasterKey =
   | "cargoType"
   | "party"
+  | "importer"
   | "supplier"
   | "loadingSite"
-  | "truckOwner";
+  | "truckOwner"
+  | "discountParty";
 
 export type NameItem = {
   id: string;
@@ -21,7 +23,14 @@ export type NameMasterConfig = {
   /** Singular noun for buttons and messages, e.g. "Cargo Type". */
   singular: string;
   route: string;
-  icon: "package" | "store" | "factory" | "mapPin" | "users";
+  icon:
+    | "package"
+    | "store"
+    | "building"
+    | "factory"
+    | "mapPin"
+    | "users"
+    | "percent";
   /** Show and edit a ₹/MT rate alongside the name (parties only). */
   withRate?: boolean;
   /** What references this master — used in the can't-delete error message. */
@@ -44,6 +53,13 @@ export const NAME_MASTERS: Record<NameMasterKey, NameMasterConfig> = {
     withRate: true,
     usedBy: "work orders",
   },
+  importer: {
+    label: "Importers",
+    singular: "Importer",
+    route: "/admin/master-data/importers",
+    icon: "building",
+    usedBy: "bills of entry",
+  },
   supplier: {
     label: "Suppliers",
     singular: "Supplier",
@@ -64,6 +80,15 @@ export const NAME_MASTERS: Record<NameMasterKey, NameMasterConfig> = {
     route: "/admin/master-data/truck-owners",
     icon: "users",
     usedBy: "trucks",
+  },
+  discountParty: {
+    label: "Discount Parties",
+    singular: "Discount Party",
+    route: "/admin/master-data/discount-parties",
+    icon: "percent",
+    // Forward-looking: invoices will reference this. No FK yet, so the
+    // can't-delete message is inert for now.
+    usedBy: "invoices",
   },
 };
 

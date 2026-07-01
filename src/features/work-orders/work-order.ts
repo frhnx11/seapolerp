@@ -2,12 +2,12 @@ import { z } from "zod";
 
 export type Option = { id: string; name: string };
 
-/** A vessel choice for the WO form, with its BL and current DO allocation. */
+/** A vessel choice for the WO form, with its total and current WO allocation. */
 export type VesselOption = {
   id: string;
   name: string;
-  blQuantity: number;
-  allocatedDo: number;
+  totalQuantity: number;
+  allocatedWo: number;
 };
 
 export type WorkOrderRow = {
@@ -22,7 +22,7 @@ export type WorkOrderRow = {
   supplierName: string;
   partyId: string;
   partyName: string;
-  doQuantity: number;
+  woQuantity: number;
   delivered: number;
   balance: number;
   // Customs/regulatory references (consignment-level, optional).
@@ -68,11 +68,11 @@ export type WorkOrderStatus = "PENDING" | "PARTIAL" | "COMPLETED";
 
 /** Derived from progress: nothing delivered = Pending, fully = Completed, else Partial. */
 export function workOrderStatus(
-  doQuantity: number,
+  woQuantity: number,
   delivered: number,
 ): WorkOrderStatus {
   if (delivered <= 0) return "PENDING";
-  if (delivered >= doQuantity) return "COMPLETED";
+  if (delivered >= woQuantity) return "COMPLETED";
   return "PARTIAL";
 }
 
@@ -117,10 +117,10 @@ export const woSchema = z.object({
   cargoTypeId: z.string().trim().min(1, "Cargo type is required"),
   supplierId: z.string().trim().min(1, "Supplier is required"),
   partyId: z.string().trim().min(1, "Party is required"),
-  doQuantity: z.coerce
+  woQuantity: z.coerce
     .number()
-    .positive("DO quantity must be greater than 0")
-    .max(999_999_999, "DO quantity is too large"),
+    .positive("WO quantity must be greater than 0")
+    .max(999_999_999, "WO quantity is too large"),
   bePermissionNo: optionalRef,
   eaIaNo: optionalRef,
   eaIaDate: optionalDate,

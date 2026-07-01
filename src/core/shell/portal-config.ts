@@ -14,7 +14,8 @@ export type NavKey =
   | "allottedTrucks"
   | "invoices"
   | "alerts"
-  | "vessels";
+  | "vessels"
+  | "deliveryOrders";
 
 export type NavItemConfig = { name: string; href: string; icon: NavKey };
 
@@ -25,6 +26,7 @@ export const ROLE_HOME: Record<string, string> = {
   PORT_WB: "/port-weighbridge",
   PARTY_WB: "/party-weighbridge",
   ACCOUNTANT: "/accountant",
+  C_AND_F: "/c-and-f",
 };
 
 export function roleHome(role: string | null | undefined): string {
@@ -37,6 +39,7 @@ export const ROLE_PORTAL_LABEL: Record<string, string> = {
   PORT_WB: "Port Weighbridge Portal",
   PARTY_WB: "Party Weighbridge Portal",
   ACCOUNTANT: "Accountant Portal",
+  C_AND_F: "C&F Portal",
 };
 
 const SUPER_ADMIN_NAV: NavItemConfig[] = [
@@ -64,6 +67,11 @@ const ADMIN_NAV: NavItemConfig[] = [
   },
   { name: "Truck Orders", href: "/admin/truck-orders", icon: "truckOrders" },
   { name: "Work Orders", href: "/admin/work-orders", icon: "workOrders" },
+  {
+    name: "Delivery Orders",
+    href: "/admin/delivery-orders",
+    icon: "deliveryOrders",
+  },
   { name: "Invoices", href: "/admin/invoices", icon: "invoices" },
   { name: "Alerts", href: "/admin/alerts", icon: "alerts" },
   { name: "Master Data", href: "/admin/master-data", icon: "masterData" },
@@ -86,6 +94,11 @@ const PORT_WB_NAV: NavItemConfig[] = [
     name: "Work Orders",
     href: "/port-weighbridge/work-orders",
     icon: "workOrders",
+  },
+  {
+    name: "Delivery Orders",
+    href: "/port-weighbridge/delivery-orders",
+    icon: "deliveryOrders",
   },
   { name: "Profile", href: "/port-weighbridge/profile", icon: "profile" },
 ];
@@ -131,12 +144,23 @@ const ACCOUNTANT_NAV: NavItemConfig[] = [
   { name: "Profile", href: "/accountant/profile", icon: "profile" },
 ];
 
+const C_AND_F_NAV: NavItemConfig[] = [
+  { name: "Dashboard", href: "/c-and-f", icon: "dashboard" },
+  {
+    name: "Delivery Orders",
+    href: "/c-and-f/delivery-orders",
+    icon: "deliveryOrders",
+  },
+  { name: "Profile", href: "/c-and-f/profile", icon: "profile" },
+];
+
 const ROLE_NAV: Record<string, NavItemConfig[]> = {
   SUPER_ADMIN: SUPER_ADMIN_NAV,
   ADMIN: ADMIN_NAV,
   PORT_WB: PORT_WB_NAV,
   PARTY_WB: PARTY_WB_NAV,
   ACCOUNTANT: ACCOUNTANT_NAV,
+  C_AND_F: C_AND_F_NAV,
 };
 
 export function navForRole(role: string | null | undefined): NavItemConfig[] {

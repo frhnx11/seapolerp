@@ -24,7 +24,7 @@ export type AllInvoiceRow = {
   seq: number;
   woSeq: number;
   date: string; // "YYYY-MM-DD"
-  truckOwner: string;
+  discountPartyName: string | null;
   rate: number;
   totalQty: number;
   amount: number;
@@ -41,7 +41,7 @@ const COLUMNS = [
   "Invoice #",
   "Work Order",
   "Date",
-  "Truck Owner",
+  "Discount Party",
   "Total Net Wt (MT)",
   "Rate (₹/MT)",
   "Amount",
@@ -66,25 +66,30 @@ export function AllInvoicesClient({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [ownerFilter, setOwnerFilter] = useState("ALL");
+  const [partyFilter, setPartyFilter] = useState("ALL");
   const [search, setSearch] = useState("");
 
   // The day is the server-fetch window — change it via the URL.
   const changeDate = (d: string) =>
     router.replace(`${pathname}?date=${d}`, { scroll: false });
 
-  const owners = useMemo(
+  const partyNames = useMemo(
     () =>
-      [...new Set(rows.map((inv) => inv.truckOwner))].sort((a, b) =>
-        a.localeCompare(b),
-      ),
+      [
+        ...new Set(
+          rows
+            .map((inv) => inv.discountPartyName)
+            .filter((n): n is string => n !== null),
+        ),
+      ].sort((a, b) => a.localeCompare(b)),
     [rows],
   );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((inv) => {
-      if (ownerFilter !== "ALL" && inv.truckOwner !== ownerFilter) return false;
+      if (partyFilter !== "ALL" && inv.discountPartyName !== partyFilter)
+        return false;
       if (!q) return true;
       return (
         formatInvoiceNo(inv.seq).toLowerCase().includes(q) ||
@@ -96,11 +101,11 @@ export function AllInvoicesClient({
         )
       );
     });
-  }, [rows, ownerFilter, search]);
+  }, [rows, partyFilter, search]);
 
   const { visible, hasMore, shown, total, loadMore } = usePagination(
     filtered,
-    `${date}|${ownerFilter}|${search}`,
+    `${date}|${partyFilter}|${search}`,
   );
 
   return (
@@ -139,15 +144,15 @@ export function AllInvoicesClient({
             )}
           </div>
           <select
-            value={ownerFilter}
-            onChange={(e) => setOwnerFilter(e.target.value)}
-            aria-label="Filter by truck owner"
+            value={partyFilter}
+            onChange={(e) => setPartyFilter(e.target.value)}
+            aria-label="Filter by discount party"
             className={selectClass}
           >
-            <option value="ALL">All Truck Owners</option>
-            {owners.map((o) => (
-              <option key={o} value={o}>
-                {o}
+            <option value="ALL">All Discount Parties</option>
+            {partyNames.map((n) => (
+              <option key={n} value={n}>
+                {n}
               </option>
             ))}
           </select>
@@ -209,7 +214,7 @@ export function AllInvoicesClient({
                       {formatDate(inv.date)}
                     </td>
                     <td className="px-4 py-3.5 text-center text-sm text-gray-600">
-                      {inv.truckOwner}
+                      {inv.discountPartyName ?? "—"}
                     </td>
                     <td className="px-4 py-3.5 text-center text-sm text-gray-600">
                       {formatQty(inv.totalQty)}

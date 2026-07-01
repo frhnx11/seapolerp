@@ -38,7 +38,7 @@ export async function createVessel(input: VesselInput) {
     await prisma.vessel.create({
       data: {
         name: parsed.data.name.trim(),
-        blQuantity: parsed.data.blQuantity,
+        totalQuantity: parsed.data.totalQuantity,
       },
     });
     revalidatePath(VESSELS_PATH);
@@ -57,7 +57,7 @@ export async function updateVessel(id: string, input: VesselInput) {
       error: parsed.error.issues[0]?.message ?? "Invalid input",
     };
   }
-  const { name, blQuantity } = parsed.data;
+  const { name, totalQuantity } = parsed.data;
   try {
     await prisma.$transaction(
       async (tx) => {
@@ -67,22 +67,22 @@ export async function updateVessel(id: string, input: VesselInput) {
         });
         if (!vessel) throw new Error("Vessel not found");
 
-        // The BL can never shrink below what work orders have already been
-        // promised (Σ DO of this vessel).
+        // The total can never shrink below what work orders have already been
+        // promised (Σ WO qty of this vessel).
         const agg = await tx.workOrder.aggregate({
           where: { vesselId: id },
-          _sum: { doQuantity: true },
+          _sum: { woQuantity: true },
         });
-        const allocated = agg._sum.doQuantity?.toNumber() ?? 0;
-        if (blQuantity < allocated) {
+        const allocated = agg._sum.woQuantity?.toNumber() ?? 0;
+        if (totalQuantity < allocated) {
           throw new Error(
-            `BL quantity can't be less than the ${formatQty(allocated)} MT already allocated to this vessel's work orders.`,
+            `Total quantity can't be less than the ${formatQty(allocated)} MT already allocated to this vessel's work orders.`,
           );
         }
 
         await tx.vessel.update({
           where: { id },
-          data: { name: name.trim(), blQuantity },
+          data: { name: name.trim(), totalQuantity },
         });
       },
       { isolationLevel: "Serializable" },

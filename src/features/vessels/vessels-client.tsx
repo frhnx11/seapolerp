@@ -18,10 +18,10 @@ export type VesselTrackRow = {
   seq: number;
   name: string;
   createdYmd: string; // "YYYY-MM-DD"
-  blQuantity: number;
-  allocatedDo: number;
+  totalQuantity: number;
+  allocatedWo: number;
   delivered: number;
-  balance: number; // BL − delivered
+  balance: number; // total − delivered
   workOrders: { id: string; seq: number }[];
 };
 
@@ -32,8 +32,8 @@ const COLUMNS = [
   "Vessel No",
   "Vessel Name",
   "Date Created",
-  "BL Quantity",
-  "Allocated DO",
+  "Total Quantity",
+  "Allocated WO",
   "Delivered Quantity",
   "Balance Quantity",
   "Work Orders",
@@ -159,10 +159,10 @@ export function VesselsClient({
                         {formatDate(r.createdYmd)}
                       </td>
                       <td className="px-4 py-3.5 text-center text-sm whitespace-nowrap text-gray-600">
-                        {formatQty(r.blQuantity)} MT
+                        {formatQty(r.totalQuantity)} MT
                       </td>
                       <td className="px-4 py-3.5 text-center text-sm whitespace-nowrap text-gray-600">
-                        {formatQty(r.allocatedDo)} MT
+                        {formatQty(r.allocatedWo)} MT
                       </td>
                       <td className="px-4 py-3.5 text-center text-sm whitespace-nowrap text-gray-600">
                         {formatQty(r.delivered)} MT

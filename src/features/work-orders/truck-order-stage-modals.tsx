@@ -4,6 +4,7 @@ import { Printer, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { LastUpdatedLine } from "@/components/last-updated-line";
 import { SearchableSelect } from "@/components/searchable-select";
 import { formatQty } from "@/core/format";
 
@@ -14,7 +15,6 @@ import {
 } from "./truck-order-actions";
 import {
   type EditLock,
-  formatStamp,
   formatTruckOrderNo,
   type TruckOrderRow,
   type WorkOrderOption,
@@ -28,50 +28,8 @@ export type StageKey = "loadingSlip" | "gross" | "netReceived";
 
 type SaveResult = { ok: true } | { ok: false; error?: string };
 
-/**
- * Stamp lines shown in stage popups once the value has been recorded: who last
- * edited it (and when), plus the immutable first-entry stamp — who first
- * recorded it and when. First entry is the anchor of the 30-minute editing
- * window and never changes, so the operator can gauge how much of it is left.
- */
-export function LastUpdatedLine({
-  by,
-  at,
-  firstBy,
-  firstAt,
-}: {
-  by: string | null;
-  at?: string | null;
-  firstBy?: string | null;
-  firstAt?: string | null;
-}) {
-  if (!by && !firstBy && !firstAt) return null;
-  return (
-    <div className="space-y-0.5 text-xs text-gray-500">
-      {by && (
-        <p>
-          Last updated by:{" "}
-          <span className="font-medium text-gray-700">{by}</span>
-          {at && <> · {formatStamp(at)}</>}
-        </p>
-      )}
-      {(firstBy || firstAt) && (
-        <p>
-          First entered by:{" "}
-          {firstBy && (
-            <span className="font-medium text-gray-700">{firstBy}</span>
-          )}
-          {firstBy && firstAt && " · "}
-          {firstAt && (
-            <span className="font-medium text-gray-700">
-              {formatStamp(firstAt)}
-            </span>
-          )}
-        </p>
-      )}
-    </div>
-  );
-}
+// Re-exported so existing importers (e.g. create-truck-order-modal) are unchanged.
+export { LastUpdatedLine };
 
 /**
  * Save-and-stay modal shell: Close · Save · Print. Save is dirty-tracked (grey

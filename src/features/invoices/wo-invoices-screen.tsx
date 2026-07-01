@@ -21,11 +21,14 @@ export async function WoInvoicesScreen({
   const workOrder = await fetchWoHeader(id);
   if (!workOrder) notFound();
 
-  const [invoices, settledTrips, woParty] = await Promise.all([
+  const [invoices, settledTrips, woParty, discountParties] = await Promise.all([
     prisma.invoice.findMany({
       where: { workOrderId: workOrder.id },
       orderBy: { seq: "desc" },
-      include: { truckOrders: { select: { id: true } } },
+      include: {
+        truckOrders: { select: { id: true } },
+        discountParty: { select: { name: true } },
+      },
     }),
     // Every settled trip (billable or already invoiced) — the wizard offers
     // the free ones plus, in edit mode, the edited invoice's own trips.
@@ -52,13 +55,20 @@ export async function WoInvoicesScreen({
       where: { id },
       select: { party: { select: { rate: true } } },
     }),
+    prisma.discountParty.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
   ]);
 
   const rows: InvoiceListRow[] = invoices.map((inv) => ({
     id: inv.id,
     seq: inv.seq,
     date: inv.date,
-    truckOwner: inv.truckOwner,
+    vendorInvoiceNumber: inv.vendorInvoiceNumber,
+    vendorInvoiceDate: inv.vendorInvoiceDate,
+    discountPartyId: inv.discountPartyId,
+    discountPartyName: inv.discountParty?.name ?? null,
     rate: inv.rate.toNumber(),
     totalQty: inv.totalQty.toNumber(),
     amount: inv.amount.toNumber(),
@@ -93,6 +103,7 @@ export async function WoInvoicesScreen({
         wo={workOrder}
         invoices={rows}
         candidates={candidates}
+        discountParties={discountParties}
         partyRate={woParty?.party.rate?.toNumber() ?? null}
         todayIso={getTodayIso()}
         initialMonth={getTodayIso().slice(0, 7)}
