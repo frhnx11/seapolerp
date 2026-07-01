@@ -392,6 +392,15 @@ export async function buildCargoStockWorkbook(
   put(`J${s}:L${s}`, st.onWt, { ...sumTot, numFmt: SUMWT });
   put(`M${s}:O${s}`, st.balance, { ...sumTot, numFmt: SUMWT });
 
+  // Every row needs an explicit height. Excel (notably in Protected View) otherwise
+  // defers auto-fitting rows that contain wrapText cells and paints them blank until
+  // a layout pass is forced (resizing any column). Fill any unset row with a standard
+  // single-line height; the taller title/header rows keep theirs.
+  for (let i = 1; i <= ws.rowCount; i++) {
+    const row = ws.getRow(i);
+    if (row.height == null) row.height = 15;
+  }
+
   const buf = await wb.xlsx.writeBuffer();
   return new Uint8Array(buf as ArrayBuffer);
 }

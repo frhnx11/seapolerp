@@ -23,6 +23,7 @@ const BASE_COLUMNS = [
   "Vessel No",
   "Vessel Name",
   "Date Created",
+  "Date of Arrival",
   "Total Quantity (MT)",
   "Allocated DO (MT)",
   "Delivered Quantity (MT)",
@@ -196,6 +197,9 @@ export function DoVesselsClient({
                     </td>
                     <td className="px-4 py-3.5 text-sm whitespace-nowrap text-gray-600">
                       {formatDate(v.createdYmd)}
+                    </td>
+                    <td className="px-4 py-3.5 text-sm whitespace-nowrap text-gray-600">
+                      {v.arrivalDate ? formatDate(v.arrivalDate) : "—"}
                     </td>
                     <td className="px-4 py-3.5 text-sm text-gray-600">
                       {formatQty(v.totalQuantity)}
